@@ -1,0 +1,9 @@
+streamlit
+streamlit-option-menu
+requests
+feast[postgres,s3]
+pandas
+boto3
+psycopg2-binary
+sqlalchemy-utils
+#time
