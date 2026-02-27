@@ -11,3 +11,7 @@ s3fs
 gcsfs
 evidently~=0.7
 sniffio
+sqlalchemy-utils
+psycopg2-binary
+feast[s3,postgres]==0.59.0
+boto3
