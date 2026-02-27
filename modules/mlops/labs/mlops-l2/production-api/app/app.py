@@ -120,8 +120,8 @@ def generate(req: CurrentRequest):
 @app.get("/analyze")
 def analyze():
     logger.info("Starting Evidently analysis...")
-    project = project_setup() # TO DO CHANGE Invece di passargli le stringhe REFERENCE_PATH, REFERENCE_TARGET_PATH ecc., 2 opzioni: o prendo le feature storiche , divido il dataset e glielo passo, o non gli passo nulla e fa tutto evidently
-                              # In ogni caso, è un get_historical_features(MAX_TIMESTAMP OR reference_timestamp). Ma NON serve
+    project = project_setup()
+
     # --- Data drift and model performance checks ---
     logger.info("Checking data drift...")
     failed_data_tests = data_drift_check(project)
