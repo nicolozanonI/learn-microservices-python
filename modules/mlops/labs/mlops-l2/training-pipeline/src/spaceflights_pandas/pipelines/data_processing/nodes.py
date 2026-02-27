@@ -2,6 +2,10 @@ import pandas as pd
 import s3fs
 import os
 
+from sqlalchemy import inspect, text
+from sqlalchemy import create_engine
+from sqlalchemy_utils import database_exists, create_database
+from datetime import datetime
 
 def _is_true(x: pd.Series) -> pd.Series:
     return x == "t"
@@ -115,4 +119,27 @@ def merge_with_model_input(model_input_table: pd.DataFrame, collected: pd.DataFr
     """
     Merge the model input table with newly collected data.
     """
-    return pd.concat([model_input_table, collected], ignore_index=True)
+
+    POSTGRESQL_URL = os.getenv("POSTGRESQL_URL", "postgresql://user:password@postgres:5432/spaceflight_db")
+    engine = create_engine(POSTGRESQL_URL)
+
+    inspector = inspect(engine)
+    table_exists = inspector.has_table('spaceflight_table')
+    should_load = False
+
+    if not table_exists:
+        should_load = True
+    else:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM spaceflight_table"))
+            count = result.scalar()
+            if count == 0:
+                should_load = True
+
+    if should_load:
+        merged_df = pd.concat([model_input_table, collected], ignore_index=True)
+        merged_df["event_timestamp"] = datetime.now()
+        merged_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
+
+    return pd.concat([model_input_table, collected], ignore_index=True) # TO DO CHANGE: feast apply lo metti dentro (o al posto di) questo nodo
+
