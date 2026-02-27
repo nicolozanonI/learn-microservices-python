@@ -18,6 +18,7 @@ COPY src ./src
 COPY conf ./conf
 COPY data ./data
 COPY app.py ./
+COPY feature_store.yaml ./
 
 # Avvia FastAPI con Uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8005"]

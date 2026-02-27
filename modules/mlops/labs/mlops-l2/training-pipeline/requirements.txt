@@ -10,3 +10,7 @@ mlflow
 s3fs
 fastapi
 uvicorn
+psycopg2-binary
+sqlalchemy-utils
+feast[postgres,s3]
+boto3
