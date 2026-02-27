@@ -15,9 +15,17 @@ services:
       retries: 12
 
   inference:
-    image: spaceflight_service:ovy7iiw3ewqxhigt   # <- your generated image name:tag here
+    image: spaceflight_service:v354agylicnmsaaj # <- your generated image name:tag here
     pull_policy: never
     environment:
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_DEFAULT_REGION=eu-central-1
+      - FEAST_S3_ENDPOINT_URL=${MINIO_URL}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_URL=${MINIO_URL}
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
     depends_on:
       - mlflow
@@ -29,14 +37,20 @@ services:
       timeout: 15s
       retries: 10
 
+
   training-pipeline:
     build: training-pipeline
     depends_on:
       - mlflow
+      - postgres
     ports:
       - "8005:8005"
     environment:
       - PYTHONUNBUFFERED=1
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_DEFAULT_REGION=eu-central-1
+      - FEAST_S3_ENDPOINT_URL=http://minio:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
       - MINIO_URL=${MINIO_URL}
@@ -73,6 +87,7 @@ services:
         /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
         mc mb --ignore-existing myminio/evidently-ai;
         mc mb --ignore-existing myminio/datasets;
+        mc mb --ignore-existing myminio/features;
         exit 0;
       "
 
@@ -97,9 +112,55 @@ services:
         - MINIO_ROOT_USER=${MINIO_ROOT_USER}
         - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
         - MINIO_URL=${MINIO_URL}
+        - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+        - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+        - AWS_DEFAULT_REGION=eu-central-1
         - BENTO_URL=${BENTO_URL}
         - KEDRO_API_URL=${KEDRO_API_URL}
       volumes:
         - ./production-api/data:/app/data
       ports:
         - "8100:8100"
+
+  feature-service:
+    build: feature-service
+    volumes:
+      - ./feature-service/feature_repo:/app/feature_repo
+    ports:
+      - "8501:8501"
+    depends_on:
+      - postgres
+      - minio
+    environment:
+      - FEATURE_STORE_YAML=/app/feature_repo/feature_store.yaml
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWROD=minioadmin
+      - MINIO_ENDPOINT=minio:9000
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_ENDPOINT_URL=${MINIO_URL}
+      - AWS_DEFAULT_REGION=eu-central-1
+      - FEAST_S3_ENDPOINT_URL=${MINIO_URL}
+
+  feast-ui:
+    build: feast-ui
+    volumes:
+      - ./feast-ui/feature_repo:/app/feature_repo
+    ports:
+      - "8888:8888"
+    environment:
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_ENDPOINT_URL=${MINIO_URL}
+      - AWS_DEFAULT_REGION=eu-central-1
+
+  postgres:
+    image: postgres:17
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=spaceflight_db
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
