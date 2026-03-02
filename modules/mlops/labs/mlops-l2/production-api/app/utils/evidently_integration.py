@@ -188,9 +188,24 @@ def check_failed_tests(my_eval: Snapshot) -> list:
     return [t for t in my_eval.tests_results if t.status == "FAIL"]
 
 def data_drift_check(project) -> list:
+
+    fv = store.get_feature_view(TRAINING_FV)
+    numerical_columns = [
+        f.name
+        for f in fv.schema
+        if f.tags.get("type") in ["training_feature", "target_feature"] \
+           and f.tags.get("definition") == "numerical"
+    ]
+
+    categorical_columns = [
+        f.name
+        for f in fv.schema
+        if f.tags.get("type") in ["training_feature", "target_feature"] \
+           and f.tags.get("definition") == "categorical"
+    ]
     schema = DataDefinition(
-        numerical_columns=["engines", "passenger_capacity", "crew", "price", "company_rating"],
-        categorical_columns=["d_check_complete", "moon_clearance_complete", "iata_approved"],
+        numerical_columns=numerical_columns,
+        categorical_columns=categorical_columns,
     )
     return check_failed_tests(report_data_drift(schema, project))
 
