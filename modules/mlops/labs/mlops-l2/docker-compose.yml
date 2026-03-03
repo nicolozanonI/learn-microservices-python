@@ -148,6 +148,8 @@ services:
       - ./feast-ui/feature_repo:/app/feature_repo
     ports:
       - "8888:8888"
+    depends_on:
+      - feature-service
     environment:
       - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
