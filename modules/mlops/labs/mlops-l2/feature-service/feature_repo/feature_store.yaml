@@ -8,7 +8,7 @@ registry_store:
     type: s3
     path: s3://features/registry.db
 
-:
+
 offline_store:
   type: postgres
   host: postgres
