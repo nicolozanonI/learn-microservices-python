@@ -1,4 +1,5 @@
 import datetime
+from datetime import timedelta
 import os
 import pandas as pd
 from evidently.ui.workspace import Workspace, Snapshot
@@ -12,22 +13,25 @@ from feast.infra.offline_stores.contrib.postgres_offline_store.postgres_source i
 import logging
 
 logger = logging.getLogger(__name__)
+# ── Configurazione ────────────────────────────────────────────────────────────
 os.environ["AWS_ACCESS_KEY_ID"]     = os.getenv("MINIO_ROOT_USER", "minioadmin")
 os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 os.environ["AWS_ENDPOINT_URL"]      = os.getenv("MINIO_URL", "http://minio:9000")
 
 DATA_DRIFT_FS = os.getenv("DATA_DRIFT_FS", "spaceflight_feature_service_v1")
+TRAINING_FV = os.getenv("TRAINING_FV", "spaceflight_features_view_v1")
 MODEL_DRIFT_FS = os.getenv("MODEL_DRIFT_FS", "spaceflight_evidently_feature_view")
 HISTORY_START  = datetime.datetime(2025, 6, 6)
 
 ws    = Workspace.create(path="s3://evidently-ai/workspace")
 store = FeatureStore(repo_path=".")
 
+# Stato condiviso tra le funzioni
 _state: dict = {
     "split_timestamp": datetime.datetime(2025, 1, 1),
 }
 
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def _get_ts_from_tag(dataset, tag_key) -> pd.Timestamp | None:
     try:
         ts_str = dataset.tags.get(tag_key)
@@ -60,8 +64,8 @@ def _save_dataset(start_date: datetime.datetime, end_date: datetime.datetime,
         storage=SavedDatasetPostgreSQLStorage(table_ref=table_ref),
         tags={
             "type": "training_dataset",
-            "start_date": start_date.strftime('%Y-%m-%d %H:%M:%S.%f'),
-            "end_date": end_date.strftime('%Y-%m-%d %H:%M:%S.%f'),
+            "start_date": start_date.strftime('%Y-%m-%d %H:%M:%S.%f'),  # ← aggiunto .%f
+            "end_date": end_date.strftime('%Y-%m-%d %H:%M:%S.%f'),  # ← aggiunto .%f
         },
     )
 
@@ -73,6 +77,7 @@ def project_setup():
     project.save()
     return project
 
+# ── Caricamento dataset da Feast ──────────────────────────────────────────────
 def get_datasets(feature_service: str, schema: DataDefinition) -> tuple[Dataset, Dataset]:
     valid_datasets = [
         ds for ds in store.list_saved_datasets()
@@ -82,12 +87,12 @@ def get_datasets(feature_service: str, schema: DataDefinition) -> tuple[Dataset,
         raise ValueError("Nessun saved dataset trovato con il tag 'end_date'.")
 
     latest    = max(valid_datasets, key=lambda x: _get_ts_from_tag(x, 'end_date'))
-    ref_start = _get_ts_from_tag(latest, 'start_date')
+    ref_start = _get_ts_from_tag(latest, 'start_date')  # ← data iniziale dal saved dataset
     ref_end   = _get_ts_from_tag(latest, 'end_date')
 
     _state["split_timestamp"] = ref_end + timedelta(microseconds=1)
 
-    df = _get_historical(feature_service, ref_start.to_pydatetime(), datetime.datetime.now())
+    df = _get_historical(feature_service, ref_start.to_pydatetime(), datetime.datetime.now())  # ← usato qui
 
     ref_df  = df[df['event_timestamp'] <= ref_end]
     curr_df = df[df['event_timestamp'] >= _state["split_timestamp"]]
@@ -134,6 +139,7 @@ def _add_drift_dashboard_panels(project) -> None:
 def report_data_drift(schema: DataDefinition, project) -> Snapshot:
     eval_data_ref, eval_data_prod = get_datasets(DATA_DRIFT_FS, schema)
 
+    # Report drift + summary
     for report_obj, tags in [
         (Report([DataDriftPreset(drift_share=0.7)], include_tests=True), ["Data drift present", "tests included"]),
         (Report([DataSummaryPreset()]),                                   ["Data summary present"]),
@@ -142,6 +148,7 @@ def report_data_drift(schema: DataDefinition, project) -> Snapshot:
                    report_obj.run(reference_data=eval_data_ref, current_data=eval_data_prod, tags=tags),
                    include_data=False)
 
+    # Il run con i test lo conserviamo per controllare i failed tests
     eval_drift = Report([DataDriftPreset(drift_share=0.7)], include_tests=True).run(
         reference_data=eval_data_ref, current_data=eval_data_prod,
         tags=["Data drift present", "tests included"]
@@ -149,6 +156,7 @@ def report_data_drift(schema: DataDefinition, project) -> Snapshot:
 
     _add_drift_dashboard_panels(project)
 
+    # Determina le date per il nuovo saved dataset
     ref_df  = eval_data_ref.as_dataframe()
     curr_df = eval_data_prod.as_dataframe()
 
@@ -184,9 +192,10 @@ def report_model_drift(schema: DataDefinition, project) -> Snapshot:
     )
     return mape
 
+
 def check_failed_tests(my_eval: Snapshot) -> list:
     return [t for t in my_eval.tests_results if t.status == "FAIL"]
-
+"""Change start"""
 def data_drift_check(project) -> list:
 
     fv = store.get_feature_view(TRAINING_FV)
@@ -208,7 +217,7 @@ def data_drift_check(project) -> list:
         categorical_columns=categorical_columns,
     )
     return check_failed_tests(report_data_drift(schema, project))
-
+"""Change end"""
 def model_performance_check(project) -> list:
     schema = DataDefinition(
         regression=[Regression(name="default", target="price", prediction="prediction")]

@@ -82,15 +82,15 @@ def split_data(datal: pd.DataFrame, parameters: dict) -> tuple:
     )
 
     if check_dataset == False:
-        table_ref = "training_" + end_date.strftime('%Y%m%d_%H%M%S')
+        table_ref = "training_" + datetime.fromisoformat(end_date).strftime('%Y%m%d_%H%M%S')
         dataset_storage = SavedDatasetPostgreSQLStorage(table_ref=table_ref)
         store.create_saved_dataset(from_=training_job,
-                                   name="training_dataset_" + end_date.strftime('%Y%m%d_%H%M%S'),
+                                   name="training_dataset_" + datetime.fromisoformat(end_date).strftime('%Y%m%d_%H%M%S'),
                                    storage=dataset_storage,
                                    tags={
                                        "type": "training_dataset",
                                        "start_date": start_date,
-                                       "end_date": end_date.strftime('%Y-%m-%d %H:%M:%S.%f')
+                                       "end_date": end_date
                                    })
 
     training_df = training_job.to_df()
