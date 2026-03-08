@@ -89,7 +89,7 @@ class SpaceflightService:
     @bentoml.api(route="/batch-scoring")
     def batch_scoring(self, request: BatchScoringRequest) -> dict:
         """
-        Get historical features and do batch-scoring
+        Get historical features from Feast, perform batch-scoring and save predictions in the offline store
         """
         try:
 
@@ -104,9 +104,11 @@ class SpaceflightService:
             store = FeatureStore(repo_path="")
             batch_scoring_feature_service = store.get_feature_service(BATCH_SCORING_FEATURE_SERVICE)
 
-            # Retrieve historical data and perform batch scoring
+            # Retrieve historical data and perform batch scoring, using start_date and end_date given in input
             batch_scoring_start_date = request.request_start_date
             batch_scoring_end_date = request.request_end_date
+
+            # Get features from Feast and create dataframe
             df = store.get_historical_features(
                 features=batch_scoring_feature_service,
                 start_date=pd.to_datetime(batch_scoring_start_date),
@@ -119,7 +121,7 @@ class SpaceflightService:
             predictions = self.bento_model.predict(df)
             prediction_df = pd.DataFrame(columns=['shuttle_id', 'company_id', 'prediction', 'pred_timestamp'])
 
-            # Add predictions
+            # Add predictions, upload to the offline store
             prediction_df['shuttle_id'] = df['shuttle_id']
             prediction_df['company_id'] = df['company_id']
             prediction_df['prediction'] = predictions.tolist()
