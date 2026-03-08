@@ -13,7 +13,7 @@ from feast.infra.offline_stores.contrib.postgres_offline_store.postgres_source i
 import logging
 
 logger = logging.getLogger(__name__)
-# ── Configurazione ────────────────────────────────────────────────────────────
+
 os.environ["AWS_ACCESS_KEY_ID"]     = os.getenv("MINIO_ROOT_USER", "minioadmin")
 os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 os.environ["AWS_ENDPOINT_URL"]      = os.getenv("MINIO_URL", "http://minio:9000")
@@ -31,7 +31,7 @@ _state: dict = {
     "split_timestamp": datetime.datetime(2025, 1, 1),
 }
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _get_ts_from_tag(dataset, tag_key) -> pd.Timestamp | None:
     try:
         ts_str = dataset.tags.get(tag_key)
@@ -77,7 +77,7 @@ def project_setup():
     project.save()
     return project
 
-# ── Caricamento dataset da Feast ──────────────────────────────────────────────
+
 def get_datasets(feature_service: str, schema: DataDefinition) -> tuple[Dataset, Dataset]:
     valid_datasets = [
         ds for ds in store.list_saved_datasets()
@@ -195,7 +195,7 @@ def report_model_drift(schema: DataDefinition, project) -> Snapshot:
 
 def check_failed_tests(my_eval: Snapshot) -> list:
     return [t for t in my_eval.tests_results if t.status == "FAIL"]
-"""Change start"""
+
 def data_drift_check(project) -> list:
 
     fv = store.get_feature_view(TRAINING_FV)
@@ -217,7 +217,7 @@ def data_drift_check(project) -> list:
         categorical_columns=categorical_columns,
     )
     return check_failed_tests(report_data_drift(schema, project))
-"""Change end"""
+
 def model_performance_check(project) -> list:
     schema = DataDefinition(
         regression=[Regression(name="default", target="price", prediction="prediction")]
