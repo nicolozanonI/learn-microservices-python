@@ -54,7 +54,7 @@ def _save_dataset(start_date: datetime.datetime, end_date: datetime.datetime,
     table_ref = "training_" + end_date.strftime('%Y%m%d_%H%M%S')
     training_job = store.get_historical_features(
         features=store.get_feature_service(feature_service_name),
-        start_date=start_date,  # ← invece di entity_df
+        start_date=start_date,
         end_date=end_date,
     )
     store.create_saved_dataset(
@@ -139,7 +139,6 @@ def _add_drift_dashboard_panels(project) -> None:
 def report_data_drift(schema: DataDefinition, project) -> Snapshot:
     eval_data_ref, eval_data_prod = get_datasets(DATA_DRIFT_FS, schema)
 
-    # Report drift + summary
     for report_obj, tags in [
         (Report([DataDriftPreset(drift_share=0.7)], include_tests=True), ["Data drift present", "tests included"]),
         (Report([DataSummaryPreset()]),                                   ["Data summary present"]),
@@ -148,7 +147,6 @@ def report_data_drift(schema: DataDefinition, project) -> Snapshot:
                    report_obj.run(reference_data=eval_data_ref, current_data=eval_data_prod, tags=tags),
                    include_data=False)
 
-    # Il run con i test lo conserviamo per controllare i failed tests
     eval_drift = Report([DataDriftPreset(drift_share=0.7)], include_tests=True).run(
         reference_data=eval_data_ref, current_data=eval_data_prod,
         tags=["Data drift present", "tests included"]
