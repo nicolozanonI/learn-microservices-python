@@ -198,7 +198,9 @@ def check_failed_tests(my_eval: Snapshot) -> list:
     return [t for t in my_eval.tests_results if t.status == "FAIL"]
 
 def data_drift_check(project) -> list:
-
+    """
+    Retrieve categorical and numerical features from Feast
+    """
     fv = store.get_feature_view(TRAINING_FV)
     numerical_columns = [
         f.name
