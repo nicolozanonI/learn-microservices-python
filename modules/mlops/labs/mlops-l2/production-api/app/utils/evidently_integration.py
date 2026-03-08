@@ -51,6 +51,9 @@ def _get_historical(feature_service_name: str, start: datetime.datetime,
 
 def _save_dataset(start_date: datetime.datetime, end_date: datetime.datetime,
                   feature_service_name: str) -> None:
+    """
+    Save the new training dataset metadata on Feast
+    """
     table_ref = "training_" + end_date.strftime('%Y%m%d_%H%M%S')
     training_job = store.get_historical_features(
         features=store.get_feature_service(feature_service_name),
@@ -87,12 +90,12 @@ def get_datasets(feature_service: str, schema: DataDefinition) -> tuple[Dataset,
         raise ValueError("Nessun saved dataset trovato con il tag 'end_date'.")
 
     latest    = max(valid_datasets, key=lambda x: _get_ts_from_tag(x, 'end_date'))
-    ref_start = _get_ts_from_tag(latest, 'start_date')  # ← data iniziale dal saved dataset
+    ref_start = _get_ts_from_tag(latest, 'start_date')
     ref_end   = _get_ts_from_tag(latest, 'end_date')
 
     _state["split_timestamp"] = ref_end + timedelta(microseconds=1)
 
-    df = _get_historical(feature_service, ref_start.to_pydatetime(), datetime.datetime.now())  # ← usato qui
+    df = _get_historical(feature_service, ref_start.to_pydatetime(), datetime.datetime.now())
 
     ref_df  = df[df['event_timestamp'] <= ref_end]
     curr_df = df[df['event_timestamp'] >= _state["split_timestamp"]]
@@ -154,7 +157,7 @@ def report_data_drift(schema: DataDefinition, project) -> Snapshot:
 
     _add_drift_dashboard_panels(project)
 
-    # Determina le date per il nuovo saved dataset
+    # Compute the time interval of the new training dataset
     ref_df  = eval_data_ref.as_dataframe()
     curr_df = eval_data_prod.as_dataframe()
 
