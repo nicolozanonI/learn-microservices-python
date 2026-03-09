@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY feature_repo /app/feature_repo
 WORKDIR /app/feature_repo
 
-CMD ["sh", "-c", "feast apply && streamlit run app.py --server.port=8501 --server.address=0.0.0.0"]
+CMD ["sh", "-c", "feast teardown && streamlit run app.py --server.port=8501 --server.address=0.0.0.0"]

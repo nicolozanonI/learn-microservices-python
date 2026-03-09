@@ -164,5 +164,4 @@ services:
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=spaceflight_db
-    volumes:
-      - ./postgres:/var/lib/postgresql/data
+

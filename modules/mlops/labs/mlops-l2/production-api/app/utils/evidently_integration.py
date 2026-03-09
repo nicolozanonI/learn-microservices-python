@@ -199,7 +199,7 @@ def check_failed_tests(my_eval: Snapshot) -> list:
 
 def data_drift_check(project) -> list:
     """
-    Retrieve categorical and numerical features from Feast
+    Retrieve categorical and numerical features from Feast and check data drift with evidentlyAI
     """
     fv = store.get_feature_view(TRAINING_FV)
     numerical_columns = [
