@@ -72,6 +72,28 @@ docker compose up --build -d
 
 # Usage
 
+## Feature service
+
+Open a shell in the **feature-service**:
+
+```bash
+docker compose exec feature-service bash
+```
+
+Create the registry and populate it with all the feature definitions:
+
+```bash
+feast apply
+```
+
+You can verify the feature store infrastructure, with all the entities, feature views and feature services at:
+
+```
+http://localhost:8888/p/spaceflight_project
+```
+
+---
+
 ## Model training
 
 Optionally, explore and experiment manually using the notebooks in:
@@ -137,35 +159,17 @@ curl -X POST http://localhost:3000/predict \
 
 ## Dataset generation and analysis
 
-### Generate a reference dataset
+### Generate a new dataset
 
-Creates a reference dataset with predictions.
-Input data are read from:
+Creates a dataset with predictions.
+Input data are generated with **feature-service**:
 
 ```
-production-api/data/reference.csv
+http://localhost:8501/
 ```
-
+You can change the values range of the new samples with the sliders, then generate the new dataset.
 Classification labels are produced by the **inference-bentoml** service.
 
-```bash
-curl -X GET http://localhost:8100/reference
-```
-
----
-
-### Generate a current dataset
-
-Creates a current dataset with predictions.
-Input data are read from the same CSV file but are optionally drifted, depending on the `drift` parameter.
-
-```bash
-curl -X POST http://localhost:8100/current \
-  -H "Content-Type: application/json" \
-  -d '{
-        "drift": true
-      }'
-```
 
 ---
 
@@ -177,4 +181,5 @@ Run the analysis comparing reference and current datasets:
 curl -X GET http://localhost:8100/analyze
 ```
 
-Finally, restart the **Evidently AI** service and inspect the results in the UI.
+Finally, restart the **Evidently AI** service and inspect the results in the UI. Reference dataset is the one used in 
+**training-pipeline**, current dataset is the one generated with **feature-service**
