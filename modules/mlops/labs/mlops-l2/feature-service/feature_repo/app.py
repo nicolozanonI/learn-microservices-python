@@ -113,9 +113,9 @@ with col3:
 st.markdown("---")
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    generate_button = st.button("🚀 Generate Dataset With DRIFT", type="primary", use_container_width=True)
+    generate_button = st.button("🚀 Generate new saples", type="primary", use_container_width=True)
 
-# Gestione Generate Dataset With DRIFT
+# Gestione Generate new samples
 if generate_button:
     try:
         # Verifica che il file reference.csv esista
