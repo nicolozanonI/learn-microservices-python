@@ -127,7 +127,7 @@ curl -X POST http://localhost:3000/import_model \
   -d '{
         "model_uri": {
           "model_name": "spaceflights-kedro",
-          "model_version": 2
+          "model_version": 1
         }
       }'
 ```

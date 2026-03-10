@@ -1,9 +1,6 @@
 project: spaceflight_project
 registry: s3://features/registry.db
 provider: local
-aws_endpoint_override: http://minio:9000
-minio_access_key: minioadmin
-minio_secret_key: minioadmin
 registry_store:
     type: s3
     path: s3://features/registry.db
