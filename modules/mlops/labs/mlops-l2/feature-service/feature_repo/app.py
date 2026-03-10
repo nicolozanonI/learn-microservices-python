@@ -10,8 +10,6 @@ st.title("🎯 ML Feature Generator")
 st.write("Configura i range delle feature e genera campioni per il tuo progetto di machine learning")
 
 
-
-# Numero di campioni da generare
 col1, col2 = st.columns([2, 1])
 with col1:
     num_samples = st.number_input(
@@ -109,35 +107,26 @@ with col3:
         step=5
     )
 
-# Pulsante centrato sotto
 st.markdown("---")
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    generate_button = st.button("🚀 Generate new saples", type="primary", use_container_width=True)
+    generate_button = st.button("Generate new saples", type="primary", use_container_width=True)
 
-# Gestione Generate new samples
 if generate_button:
     try:
-        # Verifica che il file reference.csv esista
         if not os.path.exists('data/reference.csv'):
             st.error("❌ File 'reference.csv' non trovato! Assicurati che esista nella cartella dell'applicazione.")
         else:
-            # Carica il reference dataset
             reference_df = pd.read_csv('data/reference.csv')
 
-            # Verifica che ci siano abbastanza righe
             if len(reference_df) < num_samples:
                 st.warning(
                     f"⚠️ Il reference.csv ha solo {len(reference_df)} righe, ma hai richiesto {num_samples} campioni. Verranno usate tutte le righe disponibili.")
                 sampled_df = reference_df.copy()
             else:
-                # Campiona righe casuali
                 sampled_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
 
-            # Timestamp di generazione
             generation_timestamp = datetime.now()
-
-            # Sostituisci le feature generate con i nuovi valori
             sampled_df['engines'] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1,
                                                       len(sampled_df)).astype(float)
             sampled_df['passenger_capacity'] = np.random.randint(passenger_capacity_range[0],
@@ -164,29 +153,23 @@ if generate_button:
 
             # Carica su PostgreSQL
             try:
-                # Leggi variabili d'ambiente
                 db_host = os.getenv('POSTGRES_HOST', 'postgres')
                 db_port = os.getenv('POSTGRES_PORT', '5432')
                 db_user = os.getenv('POSTGRES_USER', 'user')
                 db_password = os.getenv('POSTGRES_PASSWORD', 'password')
                 db_name = os.getenv('POSTGRES_DB', 'spaceflight_db')
-
-                # Crea connessione SQLAlchemy
                 connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
                 engine = create_engine(connection_string)
 
-                # Carica i dati (append, non replace)
                 sampled_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
 
                 st.session_state.postgres_success = True
 
-                # Chiama l'endpoint batch-scoring
                 try:
                     api_host = os.getenv('API_HOST', 'inference')
                     api_port = os.getenv('API_PORT', '3000')
                     url = f"http://{api_host}:{api_port}/batch-scoring"
 
-                    # Prepara il payload con il timestamp come stringa
                     payload = {
                         "request": {
                             "request_start_date": "2025-12-01T16:30:45.123456",
@@ -208,14 +191,12 @@ if generate_button:
     except Exception as e:
         st.error(f"❌ Errore durante la generazione: {str(e)}")
 
-# Visualizzazione dei risultati - solo status
 if 'generated' in st.session_state and st.session_state.generated:
     df = st.session_state.generated_data
 
     st.markdown("---")
     st.subheader("📡 Status Caricamento Dati")
 
-    # PostgreSQL Status
     if st.session_state.get('postgres_success', False):
         st.success(f"✅ {len(df)} campioni caricati con successo su PostgreSQL!")
     elif st.session_state.get('postgres_error'):
@@ -227,7 +208,6 @@ if 'generated' in st.session_state and st.session_state.generated:
         st.success(f"✅ Chiamata a /batch-scoring completata!")
         st.subheader("Risposta API:")
 
-        # Mostra la risposta
         if response.headers.get('content-type') == 'application/json':
             st.json(response.json())
         else:
