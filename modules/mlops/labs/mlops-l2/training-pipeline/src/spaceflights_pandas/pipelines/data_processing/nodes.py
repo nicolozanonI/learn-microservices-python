@@ -117,7 +117,7 @@ def load_and_merge_from_minio(bucket: str) -> pd.DataFrame:
 
 def merge_with_model_input(model_input_table: pd.DataFrame, collected: pd.DataFrame) -> pd.DataFrame:
     """
-    Merge the model input table with newly collected data.
+    Load data to the offline store
     """
 
     POSTGRESQL_URL = os.getenv("POSTGRESQL_URL", "postgresql://user:password@postgres:5432/spaceflight_db")
@@ -141,5 +141,5 @@ def merge_with_model_input(model_input_table: pd.DataFrame, collected: pd.DataFr
         merged_df["event_timestamp"] = datetime.now()
         merged_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
 
-    return pd.concat([model_input_table, collected], ignore_index=True) # TO DO CHANGE: feast apply lo metti dentro (o al posto di) questo nodo
+    return pd.concat([model_input_table, collected], ignore_index=True)
 

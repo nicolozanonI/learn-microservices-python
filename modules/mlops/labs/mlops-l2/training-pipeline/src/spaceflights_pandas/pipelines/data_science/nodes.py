@@ -22,7 +22,6 @@ def get_latest_dataset_metadata(store):
     except Exception:
         dataset_list = []
 
-    # Valori di default
     default_start = "2025-01-01 00:00:00"
     default_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
@@ -49,7 +48,7 @@ def get_latest_dataset_metadata(store):
         return False, default_start, default_end
 
 def split_data(datal: pd.DataFrame, parameters: dict) -> tuple:
-    """Splits data into features and targets training and test sets.
+    """Get features from Feast and splits data into features and targets training and test sets.
 
     Args:
         data: Data containing features and target.
