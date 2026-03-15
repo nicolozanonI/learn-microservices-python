@@ -6,6 +6,23 @@ import requests
 import os
 from sqlalchemy import create_engine
 
+MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+MINIO_URL = os.getenv("MINIO_URL", "http://minio:9000")
+MINIO_CURRENT_OBJ = "current_target"
+
+def upload_to_minio(df, object_name):
+    url = f"s3://datasets/{object_name}.csv"
+    df.to_csv(
+        url,
+        index=False,
+        storage_options={
+            "key": MINIO_ROOT_USER,
+            "secret": MINIO_ROOT_PASSWORD,
+            "client_kwargs": {"endpoint_url": MINIO_URL}
+        }
+    )
+
 st.title("🎯 ML Feature Generator")
 st.write("Configura i range delle feature e genera campioni per il tuo progetto di machine learning")
 
@@ -122,29 +139,29 @@ if generate_button:
             if len(reference_df) < num_samples:
                 st.warning(
                     f"⚠️ Il reference.csv ha solo {len(reference_df)} righe, ma hai richiesto {num_samples} campioni. Verranno usate tutte le righe disponibili.")
-                sampled_df = reference_df.copy()
+                current_df = reference_df.copy()
             else:
-                sampled_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
+                current_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
 
             generation_timestamp = datetime.now()
-            sampled_df['engines'] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1,
-                                                      len(sampled_df)).astype(float)
-            sampled_df['passenger_capacity'] = np.random.randint(passenger_capacity_range[0],
-                                                                 passenger_capacity_range[1] + 1, len(sampled_df))
-            sampled_df['crew'] = np.random.uniform(crew_range[0], crew_range[1], len(sampled_df)).round(1)
-            sampled_df['d_check_complete'] = np.random.random(len(sampled_df)) < (d_check_prob / 100)
-            sampled_df['moon_clearance_complete'] = np.random.random(len(sampled_df)) < (moon_clearance_prob / 100)
-            sampled_df['iata_approved'] = np.random.random(len(sampled_df)) < (iata_approved_prob / 100)
-            sampled_df['company_rating'] = np.random.uniform(company_rating_range[0], company_rating_range[1],
-                                                             len(sampled_df)).round(1)
-            sampled_df['review_scores_rating'] = np.random.uniform(review_scores_rating_range[0],
+            current_df['engines'] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1,
+                                                      len(current_df)).astype(float)
+            current_df['passenger_capacity'] = np.random.randint(passenger_capacity_range[0],
+                                                                 passenger_capacity_range[1] + 1, len(current_df))
+            current_df['crew'] = np.random.uniform(crew_range[0], crew_range[1], len(current_df)).round(1)
+            current_df['d_check_complete'] = np.random.random(len(current_df)) < (d_check_prob / 100)
+            current_df['moon_clearance_complete'] = np.random.random(len(current_df)) < (moon_clearance_prob / 100)
+            current_df['iata_approved'] = np.random.random(len(current_df)) < (iata_approved_prob / 100)
+            current_df['company_rating'] = np.random.uniform(company_rating_range[0], company_rating_range[1],
+                                                             len(current_df)).round(1)
+            current_df['review_scores_rating'] = np.random.uniform(review_scores_rating_range[0],
                                                                    review_scores_rating_range[1],
-                                                                   len(sampled_df)).round(1)
-            sampled_df['price'] = np.random.uniform(price_range[0], price_range[1], len(sampled_df)).round(1)
-            sampled_df['event_timestamp'] = generation_timestamp
+                                                                   len(current_df)).round(1)
+            current_df['price'] = np.random.uniform(price_range[0], price_range[1], len(current_df)).round(1)
+            current_df['event_timestamp'] = generation_timestamp
 
             # Salva nel session state per visualizzazione
-            st.session_state.generated_data = sampled_df
+            st.session_state.generated_data = current_df
             st.session_state.generated = True
             st.session_state.postgres_success = False
             st.session_state.postgres_error = None
@@ -161,7 +178,7 @@ if generate_button:
                 connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
                 engine = create_engine(connection_string)
 
-                sampled_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
+                current_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
 
                 st.session_state.postgres_success = True
 
@@ -177,6 +194,8 @@ if generate_button:
                         }
                     }
 
+                    upload_to_minio(current_df, MINIO_CURRENT_OBJ+generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
+
                     headers = {"Content-Type": "application/json"}
                     response = requests.post(url, headers=headers, json=payload, timeout=30)
 
@@ -189,23 +208,23 @@ if generate_button:
                 st.session_state.postgres_error = str(e)
 
     except Exception as e:
-        st.error(f"❌ Errore durante la generazione: {str(e)}")
+        st.error(f"Errore durante la generazione: {str(e)}")
 
 if 'generated' in st.session_state and st.session_state.generated:
     df = st.session_state.generated_data
 
     st.markdown("---")
-    st.subheader("📡 Status Caricamento Dati")
+    st.subheader("Status Caricamento Dati")
 
     if st.session_state.get('postgres_success', False):
-        st.success(f"✅ {len(df)} campioni caricati con successo su PostgreSQL!")
+        st.success(f"{len(df)} campioni caricati con successo su PostgreSQL!")
     elif st.session_state.get('postgres_error'):
-        st.error(f"❌ Errore durante il caricamento su PostgreSQL: {st.session_state.postgres_error}")
+        st.error(f"Errore durante il caricamento su PostgreSQL: {st.session_state.postgres_error}")
 
     # API Response Status
     if st.session_state.get('api_response'):
         response = st.session_state.api_response
-        st.success(f"✅ Chiamata a /batch-scoring completata!")
+        st.success(f"Chiamata a /batch-scoring completata!")
         st.subheader("Risposta API:")
 
         if response.headers.get('content-type') == 'application/json':

@@ -6,4 +6,5 @@ pandas
 boto3
 psycopg2-binary
 sqlalchemy-utils
+s3fs
 #time
