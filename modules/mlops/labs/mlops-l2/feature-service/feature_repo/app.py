@@ -132,13 +132,13 @@ with col2:
 if generate_button:
     try:
         if not os.path.exists('data/reference.csv'):
-            st.error("❌ File 'reference.csv' non trovato! Assicurati che esista nella cartella dell'applicazione.")
+            st.error("File 'reference.csv' not found.")
         else:
             reference_df = pd.read_csv('data/reference.csv')
 
             if len(reference_df) < num_samples:
                 st.warning(
-                    f"⚠️ Il reference.csv ha solo {len(reference_df)} righe, ma hai richiesto {num_samples} campioni. Verranno usate tutte le righe disponibili.")
+                    f"Il reference.csv ha solo {len(reference_df)} righe, ma hai richiesto {num_samples} campioni. Verranno usate tutte le righe disponibili.")
                 current_df = reference_df.copy()
             else:
                 current_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
@@ -160,7 +160,6 @@ if generate_button:
             current_df['price'] = np.random.uniform(price_range[0], price_range[1], len(current_df)).round(1)
             current_df['event_timestamp'] = generation_timestamp
 
-            # Salva nel session state per visualizzazione
             st.session_state.generated_data = current_df
             st.session_state.generated = True
             st.session_state.postgres_success = False
@@ -168,7 +167,6 @@ if generate_button:
             st.session_state.api_response = None
             st.session_state.api_error = None
 
-            # Carica su PostgreSQL
             try:
                 db_host = os.getenv('POSTGRES_HOST', 'postgres')
                 db_port = os.getenv('POSTGRES_PORT', '5432')
@@ -219,7 +217,7 @@ if 'generated' in st.session_state and st.session_state.generated:
     if st.session_state.get('postgres_success', False):
         st.success(f"{len(df)} campioni caricati con successo su PostgreSQL!")
     elif st.session_state.get('postgres_error'):
-        st.error(f"Errore durante il caricamento su PostgreSQL: {st.session_state.postgres_error}")
+        st.error(f"Errror during loading on the Offline Store: {st.session_state.postgres_error}")
 
     # API Response Status
     if st.session_state.get('api_response'):
@@ -232,4 +230,4 @@ if 'generated' in st.session_state and st.session_state.generated:
         else:
             st.code(response.text)
     elif st.session_state.get('api_error'):
-        st.warning(f"⚠️ Errore durante la chiamata API: {st.session_state.api_error}")
+        st.warning(f"Error during API call: {st.session_state.api_error}")
