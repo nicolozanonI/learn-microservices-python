@@ -78,7 +78,7 @@ with col2:
     review_scores_rating_range = st.slider(
         "Review Scores Rating - Range",
         min_value=0.0,
-        max_value=5.0,
+        max_value=100.0,
         value=(3.5, 5.0),
         step=0.1
     )
