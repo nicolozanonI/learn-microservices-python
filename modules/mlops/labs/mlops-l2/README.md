@@ -80,7 +80,7 @@ Open a shell in the **feature-service**:
 docker compose exec feature-service bash
 ```
 
-Create the registry and populate it with all the feature definitions:
+Create the registry and populate it with all the features defined in ```spaceflight_features.py```:
 
 ```bash
 feast apply

@@ -73,7 +73,6 @@ def split_data(datal: pd.DataFrame, parameters: dict) -> tuple:
 
     check_dataset, start_date, end_date = get_latest_dataset_metadata(store)
 
-    #end_date = datetime.now()
     training_job = store.get_historical_features(
         features=spaceflight_features,
         start_date=pd.to_datetime(start_date),

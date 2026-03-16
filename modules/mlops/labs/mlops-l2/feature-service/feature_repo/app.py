@@ -23,14 +23,14 @@ def upload_to_minio(df, object_name):
         }
     )
 
-st.title("🎯 ML Feature Generator")
-st.write("Configura i range delle feature e genera campioni per il tuo progetto di machine learning")
+st.title("ML Feature Generator")
+st.write("Configura rfeatures range and generate new samples")
 
 
 col1, col2 = st.columns([2, 1])
 with col1:
     num_samples = st.number_input(
-        "Numero di campioni da generare",
+        "Number of samples",
         min_value=1,
         max_value=10000,
         value=1000,
@@ -91,8 +91,8 @@ with col2:
         step=50.0
     )
 
-st.subheader("Probabilità Features Booleane")
-st.write("Imposta la probabilità (0-100%) che il valore sia True")
+st.subheader("Boolean features probability")
+st.write("Set probability (0-100%) of True values")
 
 col1, col2, col3 = st.columns(3)
 
@@ -214,14 +214,14 @@ if 'generated' in st.session_state and st.session_state.generated:
     st.subheader("Status Caricamento Dati")
 
     if st.session_state.get('postgres_success', False):
-        st.success(f"{len(df)} campioni caricati con successo su PostgreSQL!")
+        st.success(f"{len(df)} samples loaded on the Offline Store")
     elif st.session_state.get('postgres_error'):
         st.error(f"Errror during loading on the Offline Store: {st.session_state.postgres_error}")
 
     # API Response Status
     if st.session_state.get('api_response'):
         response = st.session_state.api_response
-        st.success(f"Chiamata a /batch-scoring completata!")
+        st.success(f"Batch scoring completed")
         st.subheader("Risposta API:")
 
         if response.headers.get('content-type') == 'application/json':
