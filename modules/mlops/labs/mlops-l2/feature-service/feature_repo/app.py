@@ -39,7 +39,6 @@ with col1:
 
 st.subheader("Range delle Features Numeriche")
 
-# Slider disposti in 2 colonne
 col1, col2 = st.columns(2)
 
 with col1:
@@ -48,7 +47,7 @@ with col1:
         min_value=0.0,
         max_value=10.0,
         value=(1.0, 4.0),
-        step=0.5
+        step=1.0
     )
 
     passenger_capacity_range = st.slider(
@@ -64,7 +63,7 @@ with col1:
         min_value=0.0,
         max_value=20.0,
         value=(1.0, 5.0),
-        step=0.5
+        step=1.0
     )
 
 with col2:
@@ -103,7 +102,7 @@ with col1:
         min_value=0,
         max_value=100,
         value=70,
-        step=5
+        step=1
     )
 
 with col2:
@@ -112,7 +111,7 @@ with col2:
         min_value=0,
         max_value=100,
         value=60,
-        step=5
+        step=1
     )
 
 with col3:
@@ -121,7 +120,7 @@ with col3:
         min_value=0,
         max_value=100,
         value=50,
-        step=5
+        step=1
     )
 
 st.markdown("---")
