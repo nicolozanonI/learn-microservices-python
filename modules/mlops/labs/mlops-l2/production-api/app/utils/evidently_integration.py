@@ -2,7 +2,7 @@ import datetime
 from datetime import timedelta
 import os
 import pandas as pd
-from evidently.ui.workspace import Workspace, Snapshot
+from evidently.ui.workspace import Workspace, Snapshot, RemoteWorkspace
 from evidently import Report, DataDefinition, Dataset, Regression
 from evidently.presets import DataDriftPreset, DataSummaryPreset, RegressionPreset
 from evidently.metrics import MAE
@@ -23,7 +23,8 @@ TRAINING_FV = os.getenv("TRAINING_FV", "spaceflight_features_view_v1")
 MODEL_DRIFT_FS = os.getenv("MODEL_DRIFT_FS", "spaceflight_evidently_feature_view")
 HISTORY_START  = datetime.datetime(2025, 6, 6)
 
-ws    = Workspace.create(path="s3://evidently-ai/workspace")
+#ws    = Workspace.create(path="s3://evidently-ai/workspace")
+ws = RemoteWorkspace("http://evidently-ai:8000")
 store = FeatureStore(repo_path=".")
 
 # Stato condiviso tra le funzioni
