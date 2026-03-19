@@ -5,6 +5,7 @@ from datetime import datetime
 import requests
 import os
 from sqlalchemy import create_engine
+from feast import FeatureStore
 
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
@@ -163,8 +164,8 @@ if generate_button:
             st.session_state.generated = True
             st.session_state.postgres_success = False
             st.session_state.postgres_error = None
-            st.session_state.api_response = None
-            st.session_state.api_error = None
+            #st.session_state.api_response = None
+            #st.session_state.api_error = None
 
             try:
                 db_host = os.getenv('POSTGRES_HOST', 'postgres')
@@ -178,28 +179,34 @@ if generate_button:
                 current_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
 
                 st.session_state.postgres_success = True
-
+                # Recupera start_date dall'ultimo saved dataset di Feast
                 try:
-                    api_host = os.getenv('API_HOST', 'inference')
-                    api_port = os.getenv('API_PORT', '3000')
-                    url = f"http://{api_host}:{api_port}/batch-scoring"
+                    feast_repo_path = os.getenv('FEAST_REPO_PATH', '.')
+                    store = FeatureStore(repo_path=feast_repo_path)
 
-                    payload = {
-                        "request": {
-                            "request_start_date": "2025-12-01T16:30:45.123456",
-                            "request_end_date": generation_timestamp.isoformat()
-                        }
-                    }
+                    dataset_list = store.list_saved_datasets()
+                    valid_datasets = [
+                        ds for ds in dataset_list
+                        if ds.tags.get('start_date') and ds.tags.get('end_date')
+                    ]
 
-                    upload_to_minio(current_df, MINIO_CURRENT_OBJ+generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
+                    if valid_datasets:
+                        latest_ds = max(
+                            valid_datasets,
+                            key=lambda x: pd.to_datetime(x.tags.get('end_date'))
+                        )
+                        feast_start_date = latest_ds.tags.get('start_date')
+                    else:
+                        # Default se non ci sono saved datasets
+                        feast_start_date = "2025-01-01T00:00:00"
 
-                    headers = {"Content-Type": "application/json"}
-                    response = requests.post(url, headers=headers, json=payload, timeout=30)
-
-                    st.session_state.api_response = response
+                    st.session_state.feast_start_date = feast_start_date
 
                 except Exception as e:
-                    st.session_state.api_error = str(e)
+                    # Fallback in caso di errore
+                    st.session_state.feast_start_date = "2025-01-01T00:00:00"
+                upload_to_minio(current_df, MINIO_CURRENT_OBJ + generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
+
 
             except Exception as e:
                 st.session_state.postgres_error = str(e)
@@ -218,15 +225,25 @@ if 'generated' in st.session_state and st.session_state.generated:
     elif st.session_state.get('postgres_error'):
         st.error(f"Errror during loading on the Offline Store: {st.session_state.postgres_error}")
 
-    # API Response Status
-    if st.session_state.get('api_response'):
-        response = st.session_state.api_response
-        st.success(f"Batch scoring completed")
-        st.subheader("Risposta API:")
+    # Istruzioni per chiamata manuale
+    st.subheader("📞 Chiamata API Manuale")
+    st.write("Esegui manualmente questo comando:")
 
-        if response.headers.get('content-type') == 'application/json':
-            st.json(response.json())
-        else:
-            st.code(response.text)
-    elif st.session_state.get('api_error'):
-        st.warning(f"Error during API call: {st.session_state.api_error}")
+    # Formatta le date per il comando curl (stesso formato del payload originale)
+    #start_date = "2025-12-01T16:30:45.123456"
+    #end_date = generation_timestamp.isoformat()
+    # Formatta le date per il comando curl
+    # start_date viene dall'ultimo saved dataset di Feast
+    start_date = st.session_state.get('feast_start_date', '2025-01-01T00:00:00')
+    end_date = generation_timestamp.isoformat()
+
+    curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
+         -H "Content-Type: application/json" \\
+         -d '{{
+               "request": {{
+                 "request_start_date": "{start_date}",
+                 "request_end_date": "{end_date}"
+               }}
+             }}' '''
+
+    st.code(curl_command, language="bash")

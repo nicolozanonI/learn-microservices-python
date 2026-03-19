@@ -93,6 +93,13 @@ services:
 
   evidently-ai:
     build: evidently-ai
+    healthcheck:
+      # Usiamo python -c perché curl potrebbe non essere installato nell'immagine
+      test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/version')" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Dà tempo al processo di avviarsi prima di iniziare i test
     depends_on:
       - createbuckets
     ports:
@@ -106,8 +113,13 @@ services:
   production-api:
       build: production-api
       depends_on:
-        - inference
-        - minio
+        evidently-ai:
+          condition: service_healthy
+        inference:
+          condition: service_started
+        minio:
+          condition: service_started
+
       environment:
         - MINIO_ROOT_USER=${MINIO_ROOT_USER}
         - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}

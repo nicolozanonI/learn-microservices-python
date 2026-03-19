@@ -168,8 +168,23 @@ Input data are generated with **feature-service**:
 http://localhost:8501/
 ```
 You can change the values range of the new samples with the sliders, then generate the new dataset.
-Classification labels are produced by the **inference-bentoml** service.
 
+### Batch scoring
+
+Classification labels are produced by the **inference-bentoml** service with:
+
+```bash
+curl -X POST http://localhost:3000/batch-scoring \
+         -H "Content-Type: application/json" \
+         -d '{
+               "request": {
+                 "request_start_date": "<start_date>",
+                 "request_end_date": "<end_date>"
+               }
+             }' 
+```
+
+Start date and end date are given in output by the **feature-service** after samples generation.
 
 ---
 
