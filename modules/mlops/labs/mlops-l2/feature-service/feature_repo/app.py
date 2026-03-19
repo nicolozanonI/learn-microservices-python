@@ -225,25 +225,17 @@ if 'generated' in st.session_state and st.session_state.generated:
     elif st.session_state.get('postgres_error'):
         st.error(f"Errror during loading on the Offline Store: {st.session_state.postgres_error}")
 
-    # Istruzioni per chiamata manuale
-    st.subheader("📞 Chiamata API Manuale")
-    st.write("Esegui manualmente questo comando:")
+    st.subheader("API call")
+    st.write("Run this command to start batch-scoring:")
 
-    # Formatta le date per il comando curl (stesso formato del payload originale)
-    #start_date = "2025-12-01T16:30:45.123456"
-    #end_date = generation_timestamp.isoformat()
-    # Formatta le date per il comando curl
-    # start_date viene dall'ultimo saved dataset di Feast
     start_date = st.session_state.get('feast_start_date', '2025-01-01T00:00:00')
     end_date = generation_timestamp.isoformat()
 
     curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
          -H "Content-Type: application/json" \\
          -d '{{
-               "request": {{
-                 "request_start_date": "{start_date}",
-                 "request_end_date": "{end_date}"
-               }}
+               "request_start_date": "{start_date}",
+               "request_end_date": "{end_date}"
              }}' '''
 
     st.code(curl_command, language="bash")
