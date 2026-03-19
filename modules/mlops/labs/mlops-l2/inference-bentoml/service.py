@@ -87,9 +87,18 @@ class SpaceflightService:
             return {"error": "Prediction failed", "details": str(e)}
 
     @bentoml.api(route="/batch-scoring")
-    def batch_scoring(self, request: BatchScoringRequest) -> dict:
+    def _batch_scoring(self, request_start_date: str, request_end_date: str) -> dict:
         """
         Get historical features from Feast, perform batch-scoring and save predictions in the offline store
+
+        curl -X POST http://localhost:3000/batch-scoring \
+     -H "Content-Type: application/json" \
+     -d '{
+           "request": {
+             "request_start_date": "2025-12-01T16:30:45.123456",
+             "request_end_date": "2026-03-19T9:30:45.123456"
+           }
+         }'
         """
         try:
 
@@ -105,8 +114,8 @@ class SpaceflightService:
             batch_scoring_feature_service = store.get_feature_service(BATCH_SCORING_FEATURE_SERVICE)
 
             # Retrieve historical data and perform batch scoring, using start_date and end_date given in input
-            batch_scoring_start_date = request.request_start_date
-            batch_scoring_end_date = request.request_end_date
+            batch_scoring_start_date = request_start_date
+            batch_scoring_end_date = request_end_date
 
             # Get features from Feast and create dataframe
             df = store.get_historical_features(
@@ -119,13 +128,13 @@ class SpaceflightService:
                 return {"status": "success", "message": "No data found for the given date"}
 
             predictions = self.bento_model.predict(df)
-            prediction_df = pd.DataFrame(columns=['shuttle_id', 'company_id', 'prediction', 'pred_timestamp'])
+            prediction_df = pd.DataFrame(columns=['shuttle_id', 'company_id', 'prediction', 'event_timestamp'])
 
             # Add predictions, upload to the offline store
             prediction_df['shuttle_id'] = df['shuttle_id']
             prediction_df['company_id'] = df['company_id']
             prediction_df['prediction'] = predictions.tolist()
-            prediction_df['pred_timestamp'] = df['event_timestamp']  # Timestamp di quando è avvenuto lo scoring)
+            prediction_df['event_timestamp'] = df['event_timestamp']  # Timestamp di quando è avvenuto lo scoring)
 
             connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
             engine = create_engine(connection_string)
