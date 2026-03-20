@@ -90,15 +90,6 @@ class SpaceflightService:
     def _batch_scoring(self, request_start_date: str, request_end_date: str) -> dict:
         """
         Get historical features from Feast, perform batch-scoring and save predictions in the offline store
-
-        curl -X POST http://localhost:3000/batch-scoring \
-     -H "Content-Type: application/json" \
-     -d '{
-           "request": {
-             "request_start_date": "2025-12-01T16:30:45.123456",
-             "request_end_date": "2026-03-19T9:30:45.123456"
-           }
-         }'
         """
         try:
 
