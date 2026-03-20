@@ -10,4 +10,6 @@ WORKDIR /app/feature_repo
 
 EXPOSE 8888
 
+ENV FEAST_USAGE=False
+
 CMD ["feast", "ui", "-p", "8888", "-h", "0.0.0.0"]

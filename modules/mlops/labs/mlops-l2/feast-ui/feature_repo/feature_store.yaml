@@ -1,7 +1,7 @@
 project: spaceflight_project
 registry:
     registry_type: sql
-    path: postgresql://user:password@postgres:5432/spaceflight_db
+    path: postgresql+psycopg://user:password@postgres:5432/spaceflight_db
     cache_ttl_seconds: 60
 provider: local
 

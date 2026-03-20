@@ -144,6 +144,7 @@ if generate_button:
                 current_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
 
             generation_timestamp = datetime.now(tz=timezone.utc)
+            st.session_state.generation_timestamp = generation_timestamp  # <-- AGGIUNGI QUESTA
             current_df['engines'] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1,
                                                       len(current_df)).astype(float)
             current_df['passenger_capacity'] = np.random.randint(passenger_capacity_range[0],
@@ -227,7 +228,7 @@ if 'generated' in st.session_state and st.session_state.generated:
     st.write("Run this command to start batch-scoring:")
 
     start_date = st.session_state.get('feast_start_date', '2025-01-01T00:00:00+00:00')
-    end_date = generation_timestamp.isoformat()
+    end_date = st.session_state.get('generation_timestamp', datetime.now()).isoformat()
 
     # Normalizza start_date per garantire che sia sempre aware
     start_date = pd.to_datetime(start_date, utc=True).isoformat()
