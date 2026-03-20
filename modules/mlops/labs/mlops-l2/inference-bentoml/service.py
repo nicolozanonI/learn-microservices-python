@@ -117,12 +117,15 @@ class SpaceflightService:
             batch_scoring_start_date = request_start_date
             batch_scoring_end_date = request_end_date
 
+            logger.info("Getting historical features from Feast...")
             # Get features from Feast and create dataframe
             df = store.get_historical_features(
                 features=batch_scoring_feature_service,
                 start_date=pd.to_datetime(batch_scoring_start_date, utc=True),
                 end_date=pd.to_datetime(batch_scoring_end_date, utc=True)
             ).to_df()
+
+            logger.info("Doing batch scoring on %s samples...", len(df))
 
             if df.empty:
                 return {"status": "success", "message": "No data found for the given date"}

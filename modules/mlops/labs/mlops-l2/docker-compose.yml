@@ -15,8 +15,7 @@ services:
       retries: 12
 
   inference:
-    image: spaceflight_service:mgs3suzdwgkn4aaj
- # <- your generated image name:tag here
+    image: spaceflight_service:wbqzdiremcifqaaj # <- your generated image name:tag here
     pull_policy: never
     environment:
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
@@ -182,3 +181,7 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=spaceflight_db
 
+  redis:
+    image: redis:7.4.5
+    ports:
+      - "6379:6379"

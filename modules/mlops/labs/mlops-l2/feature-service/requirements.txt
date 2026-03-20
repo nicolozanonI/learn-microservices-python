@@ -1,7 +1,7 @@
 streamlit
 streamlit-option-menu
 requests
-feast[postgres,s3]
+feast[postgres, redis]
 pandas
 boto3
 psycopg2-binary

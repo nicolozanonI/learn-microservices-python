@@ -1,8 +1,12 @@
 service: "service:SpaceflightService"
+
 include:
   - "service.py"
+  - "feature_store.yaml"
+
 python:
   packages:
+    - setuptools
     - bentoml
     - uvicorn
     - mlflow
@@ -12,6 +16,12 @@ python:
     - scikit-learn
     - scipy
     - sqlalchemy-utils
-    - psycopg2-binary
-    - "feast[s3,postgres]==0.59.0"
-    - boto3
+    - psycopg2-binary    # Sostituisci psycopg2-binary con questo per compatibilità Feast 0.3x+
+    - "feast[postgres, redis]==0.61.0" # Nota: la 0.59 non esiste ancora, la stabile attuale è 0.44 o 0.45
+
+docker:
+  system_packages:
+    - "build-essential"
+    - "python3-dev"
+    - "gcc"
+    - "libpq-dev"

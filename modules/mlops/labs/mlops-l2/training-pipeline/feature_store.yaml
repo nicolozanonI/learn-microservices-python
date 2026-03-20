@@ -13,14 +13,10 @@ offline_store:
   db_schema: public
   user: user
   password: password
+
 online_store:
-  type: postgres
-  host: postgres        # nome servizio docker compose
-  port: 5432
-  database: spaceflight_db # o lo stesso db, ma meglio separato
-  user: user
-  password: password
-  db_schema: online     # opzionale, per tenerlo separato
+  type: redis
+  connection_string: "localhost:6379"
 
 entity_key_serialization_version: 3
 auth:
