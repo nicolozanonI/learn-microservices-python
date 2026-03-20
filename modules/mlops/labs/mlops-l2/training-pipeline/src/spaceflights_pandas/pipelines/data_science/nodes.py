@@ -19,7 +19,7 @@ def get_latest_dataset_metadata(store):
     except Exception:
         dataset_list = []
 
-    default_start = "2025-01-01 00:00:00+00:00"  # ora è aware
+    default_start = "2026-03-16 00:00:00+00:00"  # ora è aware
     default_end = datetime.now(tz=timezone.utc).isoformat()  # es. "2026-03-19T15:41:45.123456+00:00"
 
     valid_datasets = [
