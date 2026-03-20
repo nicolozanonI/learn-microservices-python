@@ -15,7 +15,8 @@ services:
       retries: 12
 
   inference:
-    image: spaceflight_service:jgz66mzdswjiaaaj # <- your generated image name:tag here
+    image: spaceflight_service:mgs3suzdwgkn4aaj
+ # <- your generated image name:tag here
     pull_policy: never
     environment:
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
@@ -27,6 +28,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
       - MINIO_URL=${MINIO_URL}
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+      - TZ=UTC
     depends_on:
       - mlflow
     ports:
@@ -55,6 +57,7 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
       - MINIO_URL=${MINIO_URL}
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+      - TZ=UTC
 
   minio:
     image: minio/minio:latest
@@ -129,6 +132,7 @@ services:
         - AWS_DEFAULT_REGION=eu-central-1
         - BENTO_URL=${BENTO_URL}
         - KEDRO_API_URL=${KEDRO_API_URL}
+        - TZ=UTC
       volumes:
         - ./production-api/data:/app/data
       ports:
@@ -153,6 +157,7 @@ services:
       - AWS_ENDPOINT_URL=${MINIO_URL}
       - AWS_DEFAULT_REGION=eu-central-1
       - FEAST_S3_ENDPOINT_URL=${MINIO_URL}
+      - TZ=UTC
 
   feast-ui:
     build: feast-ui

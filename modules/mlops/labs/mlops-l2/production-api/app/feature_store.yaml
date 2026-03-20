@@ -1,13 +1,9 @@
 project: spaceflight_project
-registry: s3://features/registry.db
+registry:
+    registry_type: sql
+    path: postgresql://user:password@postgres:5432/spaceflight_db
+    cache_ttl_seconds: 60
 provider: local
-aws_endpoint_override: http://minio:9000
-minio_access_key: minioadmin
-minio_secret_key: minioadmin
-registry_store:
-    type: s3
-    path: s3://features/registry.db
-
 
 offline_store:
   type: postgres
@@ -17,6 +13,15 @@ offline_store:
   db_schema: public
   user: user
   password: password
+
+online_store:
+  type: postgres
+  host: postgres        # nome servizio docker compose
+  port: 5432
+  database: spaceflight_db # o lo stesso db, ma meglio separato
+  user: user
+  password: password
+  db_schema: online     # opzionale, per tenerlo separato
 
 entity_key_serialization_version: 3
 auth:

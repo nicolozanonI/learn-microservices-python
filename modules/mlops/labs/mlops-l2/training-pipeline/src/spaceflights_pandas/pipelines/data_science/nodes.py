@@ -9,21 +9,18 @@ import mlflow
 from mlflow.models import infer_signature
 
 from feast import FeatureStore, FeatureService
-from datetime import datetime
+from datetime import datetime, timezone
 from feast.infra.offline_stores.contrib.postgres_offline_store.postgres_source import SavedDatasetPostgreSQLStorage
 
 
 def get_latest_dataset_metadata(store):
-    """
-    Check on Feast which is the training dataset, if there's any.
-    """
     try:
         dataset_list = store.list_saved_datasets()
     except Exception:
         dataset_list = []
 
-    default_start = "2025-01-01 00:00:00"
-    default_end = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+    default_start = "2025-01-01 00:00:00+00:00"  # ora è aware
+    default_end = datetime.now(tz=timezone.utc).isoformat()  # es. "2026-03-19T15:41:45.123456+00:00"
 
     valid_datasets = [
         ds for ds in dataset_list
@@ -36,13 +33,9 @@ def get_latest_dataset_metadata(store):
     try:
         latest_ds = max(
             valid_datasets,
-            key=lambda x: pd.to_datetime(x.tags.get('end_date'))
+            key=lambda x: pd.to_datetime(x.tags.get('end_date'), utc=True)
         )
-
-        start_date = latest_ds.tags.get('start_date')
-        end_date = latest_ds.tags.get('end_date')
-
-        return True, start_date, end_date
+        return True, latest_ds.tags.get('start_date'), latest_ds.tags.get('end_date')
 
     except Exception:
         return False, default_start, default_end
@@ -75,21 +68,23 @@ def split_data(datal: pd.DataFrame, parameters: dict) -> tuple:
 
     training_job = store.get_historical_features(
         features=spaceflight_features,
-        start_date=pd.to_datetime(start_date),
-        end_date=pd.to_datetime(end_date)
+        start_date=pd.to_datetime(start_date, utc=True),
+        end_date=pd.to_datetime(end_date, utc=True)
     )
 
     if check_dataset == False:
-        table_ref = "training_" + datetime.fromisoformat(end_date).strftime('%Y%m%d_%H%M%S')
-        dataset_storage = SavedDatasetPostgreSQLStorage(table_ref=table_ref)
-        store.create_saved_dataset(from_=training_job,
-                                   name="training_dataset_" + datetime.fromisoformat(end_date).strftime('%Y%m%d_%H%M%S'),
-                                   storage=dataset_storage,
-                                   tags={
-                                       "type": "training_dataset",
-                                       "start_date": start_date,
-                                       "end_date": end_date
-                                   })
+        end_dt = datetime.fromisoformat(end_date)  # ora è aware grazie al +00:00
+        table_ref = "training_" + end_dt.strftime('%Y%m%d_%H%M%S')
+        store.create_saved_dataset(
+            from_=training_job,
+            name="training_dataset_" + end_dt.strftime('%Y%m%d_%H%M%S'),
+            storage=SavedDatasetPostgreSQLStorage(table_ref=table_ref),
+            tags={
+                "type": "training_dataset",
+                "start_date": start_date,
+                "end_date": end_date
+            }
+        )
 
     training_df = training_job.to_df()
 

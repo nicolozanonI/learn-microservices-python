@@ -1,5 +1,5 @@
 import datetime
-from datetime import timedelta
+from datetime import timedelta, timezone
 import os
 import pandas as pd
 from evidently.ui.workspace import Workspace, Snapshot, RemoteWorkspace
@@ -18,44 +18,63 @@ os.environ["AWS_ACCESS_KEY_ID"]     = os.getenv("MINIO_ROOT_USER", "minioadmin")
 os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 os.environ["AWS_ENDPOINT_URL"]      = os.getenv("MINIO_URL", "http://minio:9000")
 
-DATA_DRIFT_FS = os.getenv("DATA_DRIFT_FS", "spaceflight_feature_service_v1")
-TRAINING_FV = os.getenv("TRAINING_FV", "spaceflight_features_view_v1")
+DATA_DRIFT_FS  = os.getenv("DATA_DRIFT_FS",  "spaceflight_feature_service_v1")
+TRAINING_FV    = os.getenv("TRAINING_FV",    "spaceflight_features_view_v1")
 MODEL_DRIFT_FS = os.getenv("MODEL_DRIFT_FS", "spaceflight_evidently_feature_view")
-HISTORY_START  = datetime.datetime(2025, 6, 6)
+HISTORY_START  = datetime.datetime(2025, 6, 6, tzinfo=timezone.utc)
 
-#ws    = Workspace.create(path="s3://evidently-ai/workspace")
-ws = RemoteWorkspace("http://evidently-ai:8000")
+#ws = Workspace.create(path="s3://evidently-ai/workspace")
+ws    = RemoteWorkspace("http://evidently-ai:8000")
 store = FeatureStore(repo_path=".")
 
 # Stato condiviso tra le funzioni
 _state: dict = {
-    "split_timestamp": datetime.datetime(2025, 1, 1),
+    "split_timestamp": datetime.datetime(2025, 1, 1, tzinfo=timezone.utc),
 }
+
+
+def _ensure_utc(dt: datetime.datetime) -> datetime.datetime:
+    """Ensure a datetime is timezone-aware UTC. If naive, assume UTC."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def _localize_event_timestamp(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure event_timestamp column is UTC-aware."""
+    if df['event_timestamp'].dt.tz is None:
+        df['event_timestamp'] = df['event_timestamp'].dt.tz_localize('UTC')
+    return df
 
 
 def _get_ts_from_tag(dataset, tag_key) -> pd.Timestamp | None:
     try:
         ts_str = dataset.tags.get(tag_key)
-        return pd.to_datetime(ts_str) if ts_str else None
+        logger.info(f"_get_ts_from_tag [{tag_key}] raw string: repr={repr(ts_str)}")
+        result = pd.to_datetime(ts_str, utc=True) if ts_str else None
+        logger.info(f"_get_ts_from_tag [{tag_key}] parsed: {result}")
+        return result
     except (ValueError, TypeError):
         return None
 
 
 def _get_historical(feature_service_name: str, start: datetime.datetime,
                     end: datetime.datetime) -> pd.DataFrame:
-    return store.get_historical_features(
+    df = store.get_historical_features(
         features=store.get_feature_service(feature_service_name),
-        start_date=start,
-        end_date=end,
+        start_date=_ensure_utc(start),
+        end_date=_ensure_utc(end),
     ).to_df()
+    return _localize_event_timestamp(df)
 
 
 def _save_dataset(start_date: datetime.datetime, end_date: datetime.datetime,
                   feature_service_name: str) -> None:
     """
-    Save the new training dataset metadata on Feast
+    Save the new training dataset metadata on Feast.
     """
-    table_ref = "training_" + end_date.strftime('%Y%m%d_%H%M%S')
+    start_date = _ensure_utc(start_date)
+    end_date   = _ensure_utc(end_date)
+
+    table_ref    = "training_" + end_date.strftime('%Y%m%d_%H%M%S')
     training_job = store.get_historical_features(
         features=store.get_feature_service(feature_service_name),
         start_date=start_date,
@@ -67,15 +86,16 @@ def _save_dataset(start_date: datetime.datetime, end_date: datetime.datetime,
         name="training_dataset_" + end_date.strftime('%Y%m%d_%H%M%S'),
         storage=SavedDatasetPostgreSQLStorage(table_ref=table_ref),
         tags={
-            "type": "training_dataset",
-            "start_date": start_date.strftime('%Y-%m-%d %H:%M:%S.%f'),  # ← aggiunto .%f
-            "end_date": end_date.strftime('%Y-%m-%d %H:%M:%S.%f'),  # ← aggiunto .%f
+            "type":       "training_dataset",
+            "start_date": start_date.isoformat(),
+            "end_date":   end_date.isoformat(),
         },
     )
 
+
 def project_setup():
     project = ws.create_project(
-        f"My Project {datetime.datetime.now().strftime('%Y %m %d - %H %M %S')}"
+        f"My Project {datetime.datetime.now(tz=timezone.utc).strftime('%Y %m %d - %H %M %S')}"
     )
     project.description = "My production monitoring simulation project."
     project.save()
@@ -96,7 +116,17 @@ def get_datasets(feature_service: str, schema: DataDefinition) -> tuple[Dataset,
 
     _state["split_timestamp"] = ref_end + timedelta(microseconds=1)
 
-    df = _get_historical(feature_service, ref_start.to_pydatetime(), datetime.datetime.now())
+    df = _get_historical(
+        feature_service,
+        ref_start.to_pydatetime(),
+        datetime.datetime.now(tz=timezone.utc)
+    )
+
+    logger.info(f"ref_end type: {type(ref_end)}, value: {ref_end}")
+    logger.info(f"ref_end tzinfo: {ref_end.tzinfo}")
+    logger.info(f"event_timestamp dtype dopo fetch: {df['event_timestamp'].dtype}")
+    logger.info(f"event_timestamp sample: {df['event_timestamp'].iloc[0]}")
+    logger.info(f"confronto diretto: {df['event_timestamp'].iloc[0] <= ref_end}")
 
     ref_df  = df[df['event_timestamp'] <= ref_end]
     curr_df = df[df['event_timestamp'] >= _state["split_timestamp"]]
@@ -111,6 +141,7 @@ def get_datasets(feature_service: str, schema: DataDefinition) -> tuple[Dataset,
         Dataset.from_pandas(ref_df,  data_definition=schema),
         Dataset.from_pandas(curr_df, data_definition=schema),
     )
+
 
 def _add_drift_dashboard_panels(project) -> None:
     panels = [
@@ -158,7 +189,6 @@ def report_data_drift(schema: DataDefinition, project) -> Snapshot:
 
     _add_drift_dashboard_panels(project)
 
-    # Compute the time interval of the new training dataset
     ref_df  = eval_data_ref.as_dataframe()
     curr_df = eval_data_prod.as_dataframe()
 
@@ -170,14 +200,16 @@ def report_data_drift(schema: DataDefinition, project) -> Snapshot:
 
     return eval_drift
 
+
 def report_model_drift(schema: DataDefinition, project) -> Snapshot:
     split = _state["split_timestamp"]
-    start = datetime.datetime(2025, 12, 12)
+    start = datetime.datetime(2025, 12, 12, tzinfo=timezone.utc)
 
-    target_df     = _get_historical(DATA_DRIFT_FS,  start, datetime.datetime.now())
-    prediction_df = _get_historical(MODEL_DRIFT_FS, start, datetime.datetime.now())
+    target_df     = _get_historical(DATA_DRIFT_FS,  start, datetime.datetime.now(tz=timezone.utc))
+    prediction_df = _get_historical(MODEL_DRIFT_FS, start, datetime.datetime.now(tz=timezone.utc))
 
     df = pd.merge(prediction_df, target_df, on=['shuttle_id', 'company_id', 'event_timestamp'], how='inner')
+    df = _localize_event_timestamp(df)
 
     eval_data_ref  = Dataset.from_pandas(df[df['event_timestamp'] <  split], data_definition=schema)
     eval_data_prod = Dataset.from_pandas(df[df['event_timestamp'] >= split], data_definition=schema)
@@ -198,29 +230,30 @@ def report_model_drift(schema: DataDefinition, project) -> Snapshot:
 def check_failed_tests(my_eval: Snapshot) -> list:
     return [t for t in my_eval.tests_results if t.status == "FAIL"]
 
+
 def data_drift_check(project) -> list:
     """
-    Retrieve categorical and numerical features from Feast and check data drift with evidentlyAI
+    Retrieve categorical and numerical features from Feast and check data drift with evidentlyAI.
     """
     fv = store.get_feature_view(TRAINING_FV)
     numerical_columns = [
         f.name
         for f in fv.schema
-        if f.tags.get("type") in ["training_feature", "target_feature"] \
-           and f.tags.get("definition") == "numerical"
+        if f.tags.get("type") in ["training_feature", "target_feature"]
+        and f.tags.get("definition") == "numerical"
     ]
-
     categorical_columns = [
         f.name
         for f in fv.schema
-        if f.tags.get("type") in ["training_feature", "target_feature"] \
-           and f.tags.get("definition") == "categorical"
+        if f.tags.get("type") in ["training_feature", "target_feature"]
+        and f.tags.get("definition") == "categorical"
     ]
     schema = DataDefinition(
         numerical_columns=numerical_columns,
         categorical_columns=categorical_columns,
     )
     return check_failed_tests(report_data_drift(schema, project))
+
 
 def model_performance_check(project) -> list:
     schema = DataDefinition(

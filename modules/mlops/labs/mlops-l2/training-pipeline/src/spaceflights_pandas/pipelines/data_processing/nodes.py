@@ -5,7 +5,7 @@ import os
 from sqlalchemy import inspect, text
 from sqlalchemy import create_engine
 from sqlalchemy_utils import database_exists, create_database
-from datetime import datetime
+from datetime import datetime, timezone
 
 def _is_true(x: pd.Series) -> pd.Series:
     return x == "t"
@@ -138,7 +138,7 @@ def merge_with_model_input(model_input_table: pd.DataFrame, collected: pd.DataFr
 
     if should_load:
         merged_df = pd.concat([model_input_table, collected], ignore_index=True)
-        merged_df["event_timestamp"] = datetime.now()
+        merged_df["event_timestamp"] = datetime.now(tz=timezone.utc)
         merged_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
 
     return pd.concat([model_input_table, collected], ignore_index=True)

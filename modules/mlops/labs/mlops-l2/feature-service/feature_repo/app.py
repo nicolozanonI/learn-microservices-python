@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 import requests
 import os
 from sqlalchemy import create_engine
@@ -143,7 +143,7 @@ if generate_button:
             else:
                 current_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
 
-            generation_timestamp = datetime.now()
+            generation_timestamp = datetime.now(tz=timezone.utc)
             current_df['engines'] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1,
                                                       len(current_df)).astype(float)
             current_df['passenger_capacity'] = np.random.randint(passenger_capacity_range[0],
@@ -193,18 +193,16 @@ if generate_button:
                     if valid_datasets:
                         latest_ds = max(
                             valid_datasets,
-                            key=lambda x: pd.to_datetime(x.tags.get('end_date'))
+                            key=lambda x: pd.to_datetime(x.tags.get('end_date'), utc=True)  # aggiunto utc=True
                         )
                         feast_start_date = latest_ds.tags.get('start_date')
                     else:
-                        # Default se non ci sono saved datasets
-                        feast_start_date = "2025-01-01T00:00:00"
+                        feast_start_date = "2025-01-01T00:00:00+00:00"  # aggiunto offset
 
                     st.session_state.feast_start_date = feast_start_date
 
                 except Exception as e:
-                    # Fallback in caso di errore
-                    st.session_state.feast_start_date = "2025-01-01T00:00:00"
+                    st.session_state.feast_start_date = "2025-01-01T00:00:00+00:00"  # aggiunto offset
                 upload_to_minio(current_df, MINIO_CURRENT_OBJ + generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
 
 
@@ -228,8 +226,11 @@ if 'generated' in st.session_state and st.session_state.generated:
     st.subheader("API call")
     st.write("Run this command to start batch-scoring:")
 
-    start_date = st.session_state.get('feast_start_date', '2025-01-01T00:00:00')
+    start_date = st.session_state.get('feast_start_date', '2025-01-01T00:00:00+00:00')
     end_date = generation_timestamp.isoformat()
+
+    # Normalizza start_date per garantire che sia sempre aware
+    start_date = pd.to_datetime(start_date, utc=True).isoformat()
 
     curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
          -H "Content-Type: application/json" \\

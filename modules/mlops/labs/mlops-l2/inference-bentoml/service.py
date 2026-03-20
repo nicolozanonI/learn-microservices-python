@@ -120,8 +120,8 @@ class SpaceflightService:
             # Get features from Feast and create dataframe
             df = store.get_historical_features(
                 features=batch_scoring_feature_service,
-                start_date=pd.to_datetime(batch_scoring_start_date),
-                end_date=pd.to_datetime(batch_scoring_end_date)
+                start_date=pd.to_datetime(batch_scoring_start_date, utc=True),
+                end_date=pd.to_datetime(batch_scoring_end_date, utc=True)
             ).to_df()
 
             if df.empty:
@@ -134,7 +134,7 @@ class SpaceflightService:
             prediction_df['shuttle_id'] = df['shuttle_id']
             prediction_df['company_id'] = df['company_id']
             prediction_df['prediction'] = predictions.tolist()
-            prediction_df['event_timestamp'] = df['event_timestamp']  # Timestamp di quando è avvenuto lo scoring)
+            prediction_df['event_timestamp'] = pd.to_datetime(df['event_timestamp'], utc=True) # Timestamp di quando è avvenuto lo scoring)
 
             connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
             engine = create_engine(connection_string)
