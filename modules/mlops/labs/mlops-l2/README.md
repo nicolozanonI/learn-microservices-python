@@ -74,17 +74,15 @@ docker compose up --build -d
 
 ## Feature service
 
-Open a shell in the **feature-service**:
+Open a shell in the **feature-service**, create the registry and populate it with all the features defined in 
+```spaceflight_features.py```::
 
 ```bash
-docker compose exec feature-service bash
+$ docker compose exec feature-service bash
+root@<container_id>:/app/feature_repo# feast apply
+root@<container_id>:/app/feature_repo# exit
 ```
 
-Create the registry and populate it with all the features defined in ```spaceflight_features.py```:
-
-```bash
-feast apply
-```
 
 You can verify the feature store infrastructure, with all the entities, feature views and feature services at:
 
@@ -177,12 +175,43 @@ Classification labels are produced by the **inference-bentoml** service with:
 curl -X POST http://localhost:3000/batch-scoring \
          -H "Content-Type: application/json" \
          -d '{
-               "request_start_date": "<batch_scoring_start_date>",
-               "request_end_date": "<batch_scoring_end_date>"
+               "start_date": "<batch_scoring_start_date>",
+               "end_date": "<batch_scoring_end_date>"
              }'  
 ```
 
-*batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after samples generation.
+*batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after samples 
+generation. You can also find the correct *start_date* in the last saved dataset metadata present in **datasets** 
+section on the Feast UI:
+
+```
+{
+  "name": "training_dataset_<timestamp>",
+  "project": "spaceflight_project",
+  "features": [
+    "spaceflight_features_view_v1:engines",
+    "spaceflight_features_view_v1:passenger_capacity",
+    "spaceflight_features_view_v1:crew",
+    "spaceflight_features_view_v1:d_check_complete",
+    "spaceflight_features_view_v1:moon_clearance_complete",
+    "spaceflight_features_view_v1:iata_approved",
+    "spaceflight_features_view_v1:company_rating",
+    "spaceflight_features_view_v1:review_scores_rating",
+    "spaceflight_features_view_v1:price"
+  ],
+  "storage": {
+    "customStorage": {
+      "configuration": "<configuration-id>"
+    }
+  },
+  "tags": {
+    "start_date": "2026-03-21T12:00:00.123456+00:00",
+    "end_date": "2026-03-21T13:00:00.123456+00:00",
+    "type": "training_dataset"
+  }
+}
+```
+The *end_date* is the timestamp of last generated samples.
 
 ---
 
@@ -194,5 +223,6 @@ Run the analysis comparing reference and current datasets:
 curl -X GET http://localhost:8100/analyze
 ```
 
-Finally, restart the **Evidently AI** service and inspect the results in the UI. Reference dataset is the one used in 
+Finally, open the **Evidently AI** service and inspect the results in the UI. Reference dataset is the one used in 
 **training-pipeline**, current dataset is the one generated with **feature-service**
+

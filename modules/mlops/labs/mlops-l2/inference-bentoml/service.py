@@ -8,6 +8,9 @@ from pydantic import BaseModel
 
 from sqlalchemy import create_engine
 from feast import FeatureStore, FeatureService
+import datetime
+from datetime import datetime
+from typing import Optional
 
 # -------------------- Constants --------------------
 ARTIFACT_MODEL_NAME = "model"
@@ -29,8 +32,8 @@ class SpaceflightInput(BaseModel):
     review_scores_rating: float
 
 class BatchScoringRequest(BaseModel):
-    request_start_date: str
-    request_end_date: str
+    start_date: str
+    end_date: str
 class ModelURI(BaseModel):
     model_name: str
     model_version: int
@@ -87,7 +90,7 @@ class SpaceflightService:
             return {"error": "Prediction failed", "details": str(e)}
 
     @bentoml.api(route="/batch-scoring")
-    def _batch_scoring(self, request_start_date: str, request_end_date: str) -> dict:
+    def _batch_scoring(self, start_date: datetime, end_date: Optional[datetime] = None) -> dict:
         """
         Get historical features from Feast, perform batch-scoring and save predictions in the offline store
         """
@@ -103,10 +106,11 @@ class SpaceflightService:
 
             store = FeatureStore(repo_path="")
             batch_scoring_feature_service = store.get_feature_service(BATCH_SCORING_FEATURE_SERVICE)
-
+            if end_date is None:
+                end_date = pd.Timestamp.now(tz='UTC')
             # Retrieve historical data and perform batch scoring, using start_date and end_date given in input
-            batch_scoring_start_date = request_start_date
-            batch_scoring_end_date = request_end_date
+            batch_scoring_start_date = start_date
+            batch_scoring_end_date = end_date
 
             logger.info("Getting historical features from Feast...")
             # Get features from Feast and create dataframe

@@ -33,8 +33,7 @@ with col1:
     num_samples = st.number_input(
         "Number of samples",
         min_value=1,
-        max_value=10000,
-        value=1000,
+        value=10000,
         step=1
     )
 
@@ -134,14 +133,11 @@ if generate_button:
         if not os.path.exists('data/reference.csv'):
             st.error("File 'reference.csv' not found.")
         else:
+            # Carica il reference dataset
             reference_df = pd.read_csv('data/reference.csv')
 
-            if len(reference_df) < num_samples:
-                st.warning(
-                    f"Il reference.csv ha solo {len(reference_df)} righe, ma hai richiesto {num_samples} campioni. Verranno usate tutte le righe disponibili.")
-                current_df = reference_df.copy()
-            else:
-                current_df = reference_df.sample(n=num_samples, replace=False).reset_index(drop=True)
+            # Campiona righe casuali (con replace=True permette duplicati se num_samples > len(reference_df))
+            current_df = reference_df.sample(n=num_samples, replace=True).reset_index(drop=True)
 
             generation_timestamp = datetime.now(tz=timezone.utc)
             st.session_state.generation_timestamp = generation_timestamp  # <-- AGGIUNGI QUESTA
@@ -236,8 +232,8 @@ if 'generated' in st.session_state and st.session_state.generated:
     curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
          -H "Content-Type: application/json" \\
          -d '{{
-               "request_start_date": "{start_date}",
-               "request_end_date": "{end_date}"
+               "start_date": "{start_date}",
+               "end_date": "{end_date}"
              }}' '''
 
     st.code(curl_command, language="bash")
