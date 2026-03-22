@@ -74,15 +74,17 @@ docker compose up --build -d
 
 ## Feature service
 
-Open a shell in the **feature-service**, create the registry and populate it with all the features defined in 
-```spaceflight_features.py```::
+Open a shell in the **feature-service**:
 
 ```bash
-$ docker compose exec feature-service bash
-root@<container_id>:/app/feature_repo# feast apply
-root@<container_id>:/app/feature_repo# exit
+docker compose exec feature-service bash
 ```
 
+Create the registry and populate it with all the features defined in ```spaceflight_features.py```:
+```bash
+feast apply
+exit
+```
 
 You can verify the feature store infrastructure, with all the entities, feature views and feature services at:
 
@@ -181,37 +183,7 @@ curl -X POST http://localhost:3000/batch-scoring \
 ```
 
 *batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after samples 
-generation. You can also find the correct *start_date* in the last saved dataset metadata present in **datasets** 
-section on the Feast UI:
-
-```
-{
-  "name": "training_dataset_<timestamp>",
-  "project": "spaceflight_project",
-  "features": [
-    "spaceflight_features_view_v1:engines",
-    "spaceflight_features_view_v1:passenger_capacity",
-    "spaceflight_features_view_v1:crew",
-    "spaceflight_features_view_v1:d_check_complete",
-    "spaceflight_features_view_v1:moon_clearance_complete",
-    "spaceflight_features_view_v1:iata_approved",
-    "spaceflight_features_view_v1:company_rating",
-    "spaceflight_features_view_v1:review_scores_rating",
-    "spaceflight_features_view_v1:price"
-  ],
-  "storage": {
-    "customStorage": {
-      "configuration": "<configuration-id>"
-    }
-  },
-  "tags": {
-    "start_date": "2026-03-21T12:00:00.123456+00:00",
-    "end_date": "2026-03-21T13:00:00.123456+00:00",
-    "type": "training_dataset"
-  }
-}
-```
-The *end_date* is the timestamp of last generated samples.
+generation.
 
 ---
 

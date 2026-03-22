@@ -88,7 +88,7 @@ def _save_dataset(start_date: datetime.datetime, end_date: datetime.datetime,
         tags={
             "type":       "training_dataset",
             "start_date": start_date.isoformat(),
-            "end_date":   end_date.isoformat(),
+            "end_date":   end_date.isoformat()
         },
     )
 
