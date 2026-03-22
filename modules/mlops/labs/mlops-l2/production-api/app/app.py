@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 
 KEDRO_API_URL = os.getenv("KEDRO_API_URL", "http://host.docker.internal:8005/run-pipeline")
 
-
-
 np.random.seed(42)
 
 app = FastAPI()
