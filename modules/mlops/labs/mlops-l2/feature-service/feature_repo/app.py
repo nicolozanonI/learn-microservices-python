@@ -79,7 +79,7 @@ with col2:
         "Review Scores Rating - Range",
         min_value=0.0,
         max_value=100.0,
-        value=(3.5, 5.0),
+        value=(3.5, 35.0),
         step=0.1
     )
 
@@ -213,7 +213,6 @@ if 'generated' in st.session_state and st.session_state.generated:
     df = st.session_state.generated_data
 
     st.markdown("---")
-    st.subheader("Status Caricamento Dati")
 
     if st.session_state.get('postgres_success', False):
         st.success(f"{len(df)} samples loaded on the Offline Store")

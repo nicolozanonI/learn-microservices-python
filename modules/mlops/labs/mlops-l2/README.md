@@ -162,12 +162,12 @@ curl -X POST http://localhost:3000/predict \
 ### Generate a new dataset
 
 Creates a dataset with predictions.
-Input data are generated with **feature-service**:
+Input data are generated with the **feature-service**:
 
 ```
 http://localhost:8501/
 ```
-You can change the values range of the new samples with the sliders, then generate the new dataset.
+Change the values range of the new samples with the sliders, then generate the new dataset.
 
 ### Batch scoring
 
@@ -195,6 +195,6 @@ Run the analysis comparing reference and current datasets:
 curl -X GET http://localhost:8100/analyze
 ```
 
-Finally, open the **Evidently AI** service and inspect the results in the UI. Reference dataset is the one used in 
-**training-pipeline**, current dataset is the one generated with **feature-service**
+Finally, open **Evidently AI** and inspect the results in the UI. Reference dataset is the one used in the
+**training-pipeline**, current dataset is the one generated with the **feature-service**
 
