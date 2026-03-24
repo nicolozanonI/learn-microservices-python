@@ -12,7 +12,7 @@ services:
       test: [ "CMD", "curl", "-f", "http://localhost:5000" ]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 5
 
   inference:
     image: spaceflight_service:bjgk46rfcget6aaj # <- your generated image name:tag here
@@ -39,9 +39,9 @@ services:
       - "3000:3000"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/healthz" ]
-      interval: 20s
-      timeout: 15s
-      retries: 10
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
 
   training-pipeline:
