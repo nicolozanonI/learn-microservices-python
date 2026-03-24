@@ -181,8 +181,6 @@ services:
     ports:
       - "8888:8888"
     depends_on:
-      feature-service:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
