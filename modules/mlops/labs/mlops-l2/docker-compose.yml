@@ -29,7 +29,12 @@ services:
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
       - TZ=UTC
     depends_on:
-      - mlflow
+      mlflow:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "3000:3000"
     healthcheck:
@@ -42,8 +47,10 @@ services:
   training-pipeline:
     build: training-pipeline
     depends_on:
-      - mlflow
-      - postgres
+      mlflow:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     ports:
       - "8005:8005"
     environment:
@@ -96,12 +103,11 @@ services:
   evidently-ai:
     build: evidently-ai
     healthcheck:
-      # Usiamo python -c perché curl potrebbe non essere installato nell'immagine
       test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/version')" ]
       interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 10s # Dà tempo al processo di avviarsi prima di iniziare i test
+      start_period: 10s
     depends_on:
       - createbuckets
     ports:
@@ -121,6 +127,8 @@ services:
           condition: service_started
         minio:
           condition: service_started
+        postgres:
+          condition: service_healthy
 
       environment:
         - MINIO_ROOT_USER=${MINIO_ROOT_USER}
@@ -144,8 +152,10 @@ services:
     ports:
       - "8501:8501"
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - FEATURE_STORE_YAML=/app/feature_repo/feature_store.yaml
       - MINIO_ROOT_USER=minioadmin
@@ -157,6 +167,12 @@ services:
       - AWS_DEFAULT_REGION=eu-central-1
       - FEAST_S3_ENDPOINT_URL=${MINIO_URL}
       - TZ=UTC
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8501/_stcore/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   feast-ui:
     build: feast-ui
@@ -165,7 +181,10 @@ services:
     ports:
       - "8888:8888"
     depends_on:
-      - feature-service
+      feature-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
@@ -180,8 +199,18 @@ services:
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=spaceflight_db
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U user -d spaceflight_db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7.4.5
     ports:
       - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
