@@ -10,4 +10,6 @@ jupyterlab
 kedro[jupyter]~=0.19.12
 kedro-datasets[pandas-csvdataset, pandas-exceldataset, pandas-parquetdataset, plotly-plotlydataset, plotly-jsondataset, matplotlib-matplotlibwriter]>=3.0
 kedro-viz>=6.7.0
-feast
+feast>=0.61.0
+sqlalchemy-utils
+psycopg2-binary
