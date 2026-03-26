@@ -50,7 +50,6 @@ def split_data(datal: pd.DataFrame, parameters: dict) -> tuple:
         Split data.
     """
     MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-    START_DATE = os.getenv("START_DATE", "2025-12-20 00:00:00")
     TRAINING_FEATURE_SERVICE = os.getenv("TRAINING_FEATURE_SERVICE", "spaceflight_feature_service_v1")
 
     mlflow.set_tracking_uri(uri=MLFLOW_TRACKING_URI)
