@@ -1,0 +1,3 @@
+psycopg2-binary
+sqlalchemy-utils
+feast[postgres, redis]==0.62.0

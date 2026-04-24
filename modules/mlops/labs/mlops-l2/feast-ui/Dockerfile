@@ -2,12 +2,13 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
     gcc \
     && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir 'feast[postgres, redis]' psycopg2-binary sqlalchemy-utils
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./feature_repo /app/feature_repo
 

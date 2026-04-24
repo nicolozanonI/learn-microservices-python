@@ -12,5 +12,5 @@ fastapi
 uvicorn
 psycopg2-binary
 sqlalchemy-utils
-feast[postgres,redis]
+feast[postgres,redis]==0.62.0
 boto3

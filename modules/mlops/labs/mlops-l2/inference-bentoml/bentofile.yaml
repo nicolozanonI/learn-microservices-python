@@ -17,7 +17,7 @@ python:
     - scipy
     - sqlalchemy-utils
     - psycopg2-binary
-    - "feast[postgres, redis]==0.61.0"
+    - "feast[postgres, redis]==0.62.0"
 
 docker:
   system_packages:
