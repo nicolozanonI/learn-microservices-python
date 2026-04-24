@@ -182,8 +182,8 @@ curl -X POST http://localhost:3000/batch-scoring \
              }'  
 ```
 
-*batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after each s
-smples generation.
+*batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after each 
+samples generation, under the "Generate new samples" button.
 
 ---
 
