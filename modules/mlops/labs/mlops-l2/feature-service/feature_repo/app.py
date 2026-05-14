@@ -24,6 +24,7 @@ MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_URL = os.getenv("MINIO_URL", "http://minio:9000")
 MINIO_CURRENT_OBJ = "current_target"
+KEDRO_API_URL = os.getenv("KEDRO_API_URL", "http://training-pipeline:8005")
 
 MONTHS_IT = [
     ("Gen", 1), ("Feb", 2), ("Mar", 3), ("Apr", 4),
@@ -385,45 +386,121 @@ if analyze_button:
         st.error(f"Errore Analyze (lettura DB): {e}")
 
 # ---------------- LOGICA: RETRAIN (1 mese, già generato) ----------------
+# ---------------- LOGICA: RETRAIN (1 mese, già generato) ----------------
 if retrain_button:
+    import time
+    from urllib.parse import urljoin
+
     selected_months = st.session_state.get("selected_months", [])
     months_with_samples = st.session_state.get("months_with_samples", set())
 
+    # Vincoli UI: 1 mese e già generato
     if not ((len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)):
         st.error("Retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro).")
         st.stop()
 
-    retrain_url = os.getenv("RETRAIN_URL", "").strip()
+    retrain_url = os.getenv("RETRAIN_URL", "http://training-pipeline:8005/run-pipeline").strip()
     if not retrain_url:
         st.info("RETRAIN_URL non configurata. Imposta l'env var per abilitare il trigger retrain.")
         st.stop()
 
     year = datetime.now(timezone.utc).year
     month = int(selected_months[0])
-    last_day = calendar.monthrange(year, month)[1]  # [1](https://github.com/streamlit/streamlit/issues/11886)
+    last_day = calendar.monthrange(year, month)[1]
     month_start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
     month_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
 
+    # Payload per la nuova API Kedro Trigger (job + status)
+    # NB: pipeline di training esplicita
     payload = {
-        "year": year,
-        "months": [month],
         "start_date": month_start.isoformat(),
         "end_date": month_end.isoformat(),
+        "pipeline": "training",
+        # opzionali (se vuoi loggarli lato API, non danno fastidio)
+        "year": year,
+        "months": [month],
         "num_samples": int(num_samples),
     }
 
-    with st.spinner("Trigger retrain in corso..."):
+    # Parametri polling
+    poll_interval_sec = 2
+    max_polls = 1800  # ~ 1h se poll_interval=2s (evita loop infinito)
+
+    with st.spinner("Retraining in corso..."):
         try:
-            r = requests.post(retrain_url, json=payload, timeout=60)
-            if r.ok:
-                st.success("Retrain triggerato con successo.")
-                try:
-                    st.json(r.json())
-                except Exception:
-                    st.write(r.text)
+            # 1) SUBMIT JOB (POST) -> deve tornare 202 con job_id + status_url
+            submit = requests.post(retrain_url, json=payload, timeout=30)
+
+            # Se non è OK/202, mostra errore e stop
+            if submit.status_code not in (200, 202):
+                st.error(f"Submit retrain fallito: {submit.status_code}")
+                st.write(submit.text)
+                st.stop()
+
+            submit_json = {}
+            try:
+                submit_json = submit.json()
+            except Exception:
+                st.error("La risposta del submit non è JSON valido.")
+                st.write(submit.text)
+                st.stop()
+
+            job_id = submit_json.get("job_id")
+            status_path = submit_json.get("status_url")  # es. "/run-pipeline/<job_id>"
+
+            if not job_id:
+                st.error("Submit OK ma manca 'job_id' nella response.")
+                st.json(submit_json)
+                st.stop()
+
+            # Costruisci URL di status:
+            # - se status_url è relativo, lo agganciamo alla base di retrain_url
+            # - se non c'è status_url, usiamo convenzione /run-pipeline/{job_id}
+            if status_path:
+                status_url = urljoin(retrain_url, status_path)
             else:
-                st.error(f"Retrain fallito: {r.status_code}")
-                st.write(r.text)
+                status_url = urljoin(retrain_url, f"/run-pipeline/{job_id}")
+
+            # salva in sessione (utile per debug / eventuale UI)
+            st.session_state.retrain_job_id = job_id
+            st.session_state.retrain_status_url = status_url
+
+            # 2) POLLING STATUS
+            for _ in range(max_polls):
+                r = requests.get(status_url, timeout=30)
+
+                if not r.ok:
+                    st.error(f"Errore polling status: {r.status_code}")
+                    st.write(r.text)
+                    st.stop()
+
+                status_json = r.json()
+                state = status_json.get("status")
+
+                # running / completed / failed (come definito nell'API)
+                if state == "completed":
+                    st.success("Retrain completato ✅")
+                    # opzionale: mostra dettagli finali
+                    st.json(status_json)
+                    break
+
+                if state == "failed":
+                    st.error("Retrain fallito ❌")
+                    # se l'API salva stdout/stderr o error dict, lo mostriamo
+                    err = status_json.get("error")
+                    if err:
+                        st.subheader("Dettagli errore")
+                        st.json(err)
+                    else:
+                        st.json(status_json)
+                    break
+
+                # ancora in corso
+                time.sleep(poll_interval_sec)
+            else:
+                st.warning("Retrain ancora in esecuzione (timeout polling). Riprova a controllare più tardi.")
+                st.write({"job_id": job_id, "status_url": status_url})
+
         except Exception as e:
             st.error(f"Errore chiamata retrain: {e}")
 

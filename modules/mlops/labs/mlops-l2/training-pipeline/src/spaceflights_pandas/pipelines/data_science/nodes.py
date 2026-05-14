@@ -40,64 +40,60 @@ def get_latest_dataset_metadata(store):
     except Exception:
         return False, default_start, default_end
 
-def split_data(datal: pd.DataFrame, parameters: dict) -> tuple:
-    """Get features from Feast and splits data into features and targets training and test sets.
 
-    Args:
-        data: Data containing features and target.
-        parameters: Parameters defined in parameters/data_science.yml.
-    Returns:
-        Split data.
+def split_data(start_date: str, end_date: str, parameters: dict) -> tuple:
+    """
+    Usa Feast come prima, ma prende start_date/end_date dall'esterno (Kedro params),
+    poi genera training_df con get_historical_features e fa train/test split.
     """
     MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
     TRAINING_FEATURE_SERVICE = os.getenv("TRAINING_FEATURE_SERVICE", "spaceflight_feature_service_v1")
 
     mlflow.set_tracking_uri(uri=MLFLOW_TRACKING_URI)
     mlflow.set_experiment("spaceflights-kedro")
-    mlflow.start_run(run_name="__default__")
+    mlflow.start_run(run_name="training")
     mlflow.set_tag("Training Info", "RandomForest model for spaceship data")
+
     mlflow.log_params(parameters)
+    mlflow.log_param("start_date", start_date)
+    mlflow.log_param("end_date", end_date)
 
     feature_store_path = os.path.join(os.getcwd(), ".")
     store = FeatureStore(repo_path=feature_store_path)
 
     spaceflight_features = store.get_feature_service(TRAINING_FEATURE_SERVICE)
 
-    check_dataset, start_date, end_date = get_latest_dataset_metadata(store)
+    start_dt = pd.to_datetime(start_date, utc=True)
+    end_dt = pd.to_datetime(end_date, utc=True)
 
+    # Retrieval storico per training (Feast pattern)
+    # Feast supporta training data generation via get_historical_features(...) [1](https://docs.feast.dev/getting-started/concepts/feature-retrieval)
     training_job = store.get_historical_features(
         features=spaceflight_features,
-        start_date=pd.to_datetime(start_date, utc=True),
-        end_date=pd.to_datetime(end_date, utc=True)
+        start_date=start_dt,
+        end_date=end_dt,
     )
-
-    if check_dataset == False:
-        end_dt = datetime.fromisoformat(end_date)  # ora è aware grazie al +00:00
-        table_ref = "training_" + end_dt.strftime('%Y%m%d_%H%M%S')
-        store.create_saved_dataset(
-            from_=training_job,
-            name="training_dataset_" + end_dt.strftime('%Y%m%d_%H%M%S'),
-            storage=SavedDatasetPostgreSQLStorage(table_ref=table_ref),
-            tags={
-                "type": "training_dataset",
-                "start_date": start_date,
-                "end_date": end_date
-            }
-        )
 
     training_df = training_job.to_df()
 
-    csv_path = "./data/05_model_input/final_input_table.csv"
+    # (opzionale) log dataset a MLflow come artifact
+    csv_path = "./data/05_model_input/training_input_table.csv"
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     training_df.to_csv(csv_path, index=False)
     mlflow.log_artifact(csv_path, artifact_path="datasets")
 
     X = training_df[parameters["features"]]
     y = training_df["price"]
+
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=parameters["test_size"], random_state=parameters["random_state"]
+        X,
+        y,
+        test_size=parameters["test_size"],
+        random_state=parameters["random_state"],
     )
 
     return X_train, X_test, y_train, y_test
+
 
 
 def train_model(X_train: pd.DataFrame, y_train: pd.Series, parameters: dict) -> RandomForestRegressor:
