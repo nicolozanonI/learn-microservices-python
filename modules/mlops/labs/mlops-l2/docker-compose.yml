@@ -34,12 +34,12 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "3015:3000"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/healthz" ]
       interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 20
 
 
   training-pipeline:
@@ -79,7 +79,7 @@ services:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 20
 
   createbuckets:
     image: minio/mc
@@ -105,7 +105,7 @@ services:
       test: [ "CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/version')" ]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
       start_period: 10s
     depends_on:
       - createbuckets
@@ -170,7 +170,7 @@ services:
       test: [ "CMD", "curl", "-f", "http://localhost:8501/_stcore/health" ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 15
       start_period: 10s
 
   feast-ui:
@@ -200,7 +200,7 @@ services:
       test: [ "CMD-SHELL", "pg_isready -U user -d spaceflight_db" ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 15
       start_period: 10s
 
   redis:
@@ -211,4 +211,4 @@ services:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 15
