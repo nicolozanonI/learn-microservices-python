@@ -134,6 +134,45 @@ def inject_month_css(months_with_samples: set, selected_months: list):
     css.append("</style>")
     st.markdown("\n".join(css), unsafe_allow_html=True)
 
+def run_feast_apply():
+
+    st.session_state.feast_apply_running = True
+    st.session_state.feast_apply_last = None
+
+    repo_dir = Path(__file__).resolve().parent
+
+    try:
+        proc = subprocess.run(
+            ["feast", "-c", str(repo_dir), "apply"],
+            capture_output=True,
+            text=True,
+        )
+        st.session_state.feast_apply_last = {
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "repo_dir": str(repo_dir),
+            "command": f"feast -c {repo_dir} apply",
+        }
+    except FileNotFoundError as e:
+        st.session_state.feast_apply_last = {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": "Comando `feast` non trovato nel container. Assicurati che feast sia installato nell'immagine.",
+            "repo_dir": str(repo_dir),
+            "command": "feast ...",
+        }
+    except Exception as e:
+        st.session_state.feast_apply_last = {
+            "returncode": -1,
+            "stdout": "",
+            "stderr": f"Errore durante feast apply: {e}",
+            "repo_dir": str(repo_dir),
+            "command": f"feast -c {repo_dir} apply",
+        }
+    finally:
+        st.session_state.feast_apply_running = False
+        st.rerun()
 
 def inject_action_buttons_css():
     st.markdown("""
@@ -256,9 +295,16 @@ with bottom_right:
     api_call_enabled = (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)
 
     # ----------------- BOTTONI (sempre gli stessi, stesso ordine) -----------------
+    feast_apply_btn = st.button(
+        "🧩 Feast apply",
+        key="btn_feast_apply",
+        use_container_width=True,
+        disabled=st.session_state.get("feast_apply_running", False),
+        on_click=run_feast_apply,
+    )
     analyze_button = st.button("Analyze", key="btn_analyze", use_container_width=True, disabled=not analyze_enabled)
     generate_button = st.button("Generate", key="btn_generate", type="primary", use_container_width=True, disabled=not generate_enabled)
-    retrain_button = st.button("Retrain", key="btn_retrain", use_container_width=True, disabled=not retrain_enabled)
+    retrain_button = st.button("Train/retrain", key="btn_retrain", use_container_width=True, disabled=not retrain_enabled)
     api_call_button = st.button("📄 API call", key="btn_apicall", use_container_width=True, disabled=not api_call_enabled)
 
     cancel_analyze = st.button(
@@ -296,7 +342,7 @@ with bottom_right:
         elif not analyze_enabled:
             msg = "Analyze: seleziona 1 mese già generato (azzurro) per impostarlo come reference."
         elif not retrain_enabled:
-            msg = "Retrain: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
+            msg = "Train/retrain: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
         elif not api_call_enabled:
             msg = "API call: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
 
@@ -480,7 +526,7 @@ if generate_button:
         st.error(f"Errore durante la generazione: {str(e)}")
 
 
-# ---------------- LOGICA: RETRAIN (1 mese, già generato) ----------------
+# ---------------- LOGICA: TRAIN/RETRAIN (1 mese, già generato) ----------------
 if retrain_button:
     import time
     from urllib.parse import urljoin
@@ -489,12 +535,12 @@ if retrain_button:
     months_with_samples = st.session_state.get("months_with_samples", set())
 
     if not ((len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)):
-        st.error("Retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro).")
+        st.error("Train/retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro).")
         st.stop()
 
     retrain_url = os.getenv("RETRAIN_URL", "http://training-pipeline:8005/run-pipeline").strip()
     if not retrain_url:
-        st.info("RETRAIN_URL non configurata. Imposta l'env var per abilitare il trigger retrain.")
+        st.info("RETRAIN_URL non configurata. Imposta l'env var per abilitare il trigger train/retrain.")
         st.stop()
 
     year = datetime.now(timezone.utc).year
@@ -516,12 +562,12 @@ if retrain_button:
     poll_interval_sec = 2
     max_polls = 1800
 
-    with st.spinner("Retraining in corso..."):
+    with st.spinner("Training/retraining in corso..."):
         try:
             submit = requests.post(retrain_url, json=payload, timeout=30)
 
             if submit.status_code not in (200, 202):
-                st.error(f"Submit retrain fallito: {submit.status_code}")
+                st.error(f"Submit train/retrain fallito: {submit.status_code}")
                 st.write(submit.text)
                 st.stop()
 
@@ -561,12 +607,12 @@ if retrain_button:
                 state = status_json.get("status")
 
                 if state == "completed":
-                    st.success("Retrain completato ✅")
+                    st.success("Training/retrain completato ✅")
                     st.json(status_json)
                     break
 
                 if state == "failed":
-                    st.error("Retrain fallito ❌")
+                    st.error("Training/retrain fallito ❌")
                     err = status_json.get("error")
                     if err:
                         st.subheader("Dettagli errore")
@@ -577,11 +623,11 @@ if retrain_button:
 
                 time.sleep(poll_interval_sec)
             else:
-                st.warning("Retrain ancora in esecuzione (timeout polling). Riprova a controllare più tardi.")
+                st.warning("Training/retrain ancora in esecuzione (timeout polling). Riprova a controllare più tardi.")
                 st.write({"job_id": job_id, "status_url": status_url})
 
         except Exception as e:
-            st.error(f"Errore chiamata retrain: {e}")
+            st.error(f"Errore chiamata training/retrain: {e}")
 
 # ---------------- UI POST-GENERATE ----------------
 if st.session_state.get("generated", False):
@@ -642,3 +688,28 @@ if st.session_state.get("analyze_results") is not None:
     else:
         st.error("Evidently analysis fallita")
         st.write(res)
+
+    # ---------------- UI: FEAST APPLY OUTPUT ----------------
+    if st.session_state.get("feast_apply_running", False):
+        with st.spinner("Eseguo `feast apply`..."):
+            st.write("In corso...")
+    elif st.session_state.get("feast_apply_last") is not None:
+        res = st.session_state.feast_apply_last
+        st.markdown("---")
+        st.subheader("Feast apply output")
+
+        st.caption(f"Repo: {res.get('repo_dir')}")
+        st.code(res.get("command", ""), language="bash")
+
+        if res.get("returncode", 1) == 0:
+            st.success("feast apply completato ✅")
+        else:
+            st.error(f"feast apply fallito ❌ (return code: {res.get('returncode')})")
+
+        if res.get("stdout"):
+            st.markdown("**stdout**")
+            st.code(res["stdout"], language="text")
+
+        if res.get("stderr"):
+            st.markdown("**stderr**")
+            st.code(res["stderr"], language="text")
