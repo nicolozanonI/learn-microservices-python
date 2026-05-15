@@ -12,6 +12,8 @@ from utils.evidently_integration import (
     data_drift_check,
     model_performance_check,
 )
+import subprocess
+from pathlib import Path
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="ML Feature Generator", layout="wide")  # wide usa tutta la larghezza [3](https://github.com/streamlit/streamlit/issues/6336)[4](https://dev.to/jamesbmour/streamlit-part-6-mastering-layouts-4hci)
@@ -67,6 +69,10 @@ def _init_timeline_state():
         st.session_state.analyze_results = None
     if "analyze_last_pair" not in st.session_state:
         st.session_state.analyze_last_pair = None
+    if "feast_apply_running" not in st.session_state:
+        st.session_state.feast_apply_running = False
+    if "feast_apply_last" not in st.session_state:
+        st.session_state.feast_apply_last = None
 
 
 
@@ -91,7 +97,7 @@ def inject_month_css(months_with_samples: set, selected_months: list):
     css = ["<style>"]
     for _, m in MONTHS_IT:
         key = f"m{m:02d}"
-        sel = f".st-key-{key} button"  # key -> class st-key-... [5](https://askai.glarity.app/search/How-can-I-disable-a-button-in-Streamlit)[6](https://stackoverflow.com/questions/79402833/streamlit-container-key-not-visible-in-html)[7](https://medium.com/@jonathan.alles/professional-streamlit-styling-with-css-and-st-yled-e5c470deaf46)
+        sel = f".st-key-{key} button"
 
         if m in months_with_samples:
             css.append(f"""{sel} {{
@@ -177,7 +183,7 @@ top_left, top_right = st.columns([2, 1])
 with top_left:
     num_samples = st.number_input("Number of samples", min_value=1, value=10000, step=1)
 
-# Numeriche a sinistra + booleane verticali a destra
+
 left_panel, right_panel = st.columns([3.2, 1.3], gap="large")
 
 with left_panel:
@@ -201,7 +207,7 @@ with right_panel:
     moon_clearance_prob = st.slider("Moon Clearance Complete (%)", 0, 100, 60, 1)
     iata_approved_prob = st.slider("IATA Approved (%)", 0, 100, 50, 1)
 
-# Riga unica: timeline + bottoni
+
 st.markdown("---")
 bottom_left, bottom_right = st.columns([7.5, 2.5], vertical_alignment="top")
 
@@ -214,7 +220,7 @@ with bottom_left:
 
     mcols = st.columns(12, gap="small")
     for i, (lab, m) in enumerate(MONTHS_IT):
-        with mcols[i]:  # <-- si entra nel container colonna [1](https://deepwiki.com/streamlit/agent-skills/3.3-selection-widgets)
+        with mcols[i]:
             st.button(
                 lab,
                 key=f"m{m:02d}",
@@ -255,7 +261,6 @@ with bottom_right:
     retrain_button = st.button("Retrain", key="btn_retrain", use_container_width=True, disabled=not retrain_enabled)
     api_call_button = st.button("📄 API call", key="btn_apicall", use_container_width=True, disabled=not api_call_enabled)
 
-    # Bottone "Annulla Analyze" SEMPRE presente -> niente shift
     cancel_analyze = st.button(
         "Annulla Analyze",
         key="btn_cancel_analyze",
@@ -263,7 +268,6 @@ with bottom_right:
         disabled=not pending,
     )
 
-    # ----------------- CLICK ANALYZE (STEP 1) -----------------
     if analyze_button:
         ref = int(selected_months[0])
         st.session_state.analyze_pending = True
@@ -273,15 +277,13 @@ with bottom_right:
         st.session_state.selected_months = []
         st.rerun()
 
-    # ----------------- CANCEL ANALYZE -----------------
     if cancel_analyze and pending:
         st.session_state.analyze_pending = False
         st.session_state.analyze_reference_month = None
         st.session_state.analyze_current_month = None
         st.rerun()
 
-    # ----------------- HINT UX: UNA SOLA RIGA, SEMPRE PRESENTE -----------------
-    # Così non “compare/scompare” blocchi diversi (info/caption) che cambiano altezza.
+
     msg = ""
     if pending and ref_month is not None:
         msg = (
@@ -298,16 +300,14 @@ with bottom_right:
         elif not api_call_enabled:
             msg = "API call: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
 
-    # Placeholder fisso per il testo -> stabilizza il layout
     hint_slot = st.empty()
-    hint_slot.caption(msg if msg else " ")  # spazio per mantenere altezza costante
+    hint_slot.caption(msg if msg else " ")
 
 if "btn_apicall" in st.session_state:
-    pass  # solo per stabilizzare key se vuoi
+    pass
 
-# Stampa curl quando si clicca API call
 if 'btn_apicall' not in st.session_state:
-    st.session_state.btn_apicall = False  # non obbligatorio, ma ok
+    st.session_state.btn_apicall = False
 
 if api_call_button:
     year = datetime.now(timezone.utc).year
@@ -344,7 +344,6 @@ ref_month = st.session_state.get("analyze_reference_month")
 selected_months = st.session_state.get("selected_months", [])
 months_with_samples = st.session_state.get("months_with_samples", set())
 
-# Siamo in pending -> aspettiamo che l'utente selezioni 1 mese current
 if pending and ref_month is not None and len(selected_months) == 1:
     cur_month = int(selected_months[0])
 
@@ -355,7 +354,6 @@ if pending and ref_month is not None and len(selected_months) == 1:
     else:
         pair = (int(ref_month), int(cur_month))
 
-        # Evita riesecuzioni duplicate sul rerun
         if st.session_state.get("analyze_last_pair") != pair:
             st.session_state.analyze_last_pair = pair
 
@@ -388,7 +386,6 @@ if pending and ref_month is not None and len(selected_months) == 1:
                         "current_month": int(cur_month),
                     }
 
-            # Chiude wizard e pulisce selezione
             st.session_state.analyze_pending = False
             st.session_state.analyze_reference_month = None
             st.session_state.analyze_current_month = None
@@ -425,11 +422,9 @@ if generate_button:
         current_df['review_scores_rating'] = np.random.uniform(review_scores_rating_range[0], review_scores_rating_range[1], len(current_df)).round(1)
         current_df['price'] = np.random.uniform(price_range[0], price_range[1], len(current_df)).round(1)
 
-        # --- event_timestamp distribuito UNIFORMEMENTE nel mese selezionato ---
         year = datetime.now(timezone.utc).year
         month = int(selected_months[0])
 
-        # monthrange ritorna (weekday, days_in_month) => usare [1] [1](https://github.com/streamlit/streamlit/issues/11886)[2](https://stackoverflow.com/questions/66718228/select-multiple-options-in-checkboxes-in-streamlit)
         last_day = calendar.monthrange(year, month)[1]
 
         month_start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -445,26 +440,22 @@ if generate_button:
         st.session_state.generated_start_date = month_start.isoformat()
         st.session_state.generated_end_date = month_end.isoformat()
 
-        # Session results
         st.session_state.generated_data = current_df
         st.session_state.generated = True
         st.session_state.postgres_success = False
         st.session_state.postgres_error = None
 
-        # Marca il mese come "con samples"
         st.session_state.months_with_samples.update([month])
         st.session_state.month_samples_meta[month] = {
             "last_ts": generation_timestamp.isoformat(),
             "count": int(num_samples),
         }
 
-        # Offline store (Postgres)
         try:
             engine = postgres_engine()
             current_df.to_sql('spaceflight_table', engine, if_exists='append', index=False)
             st.session_state.postgres_success = True
 
-            # Feast start_date
             try:
                 feast_repo_path = os.getenv('FEAST_REPO_PATH', '.')
                 store = FeatureStore(repo_path=feast_repo_path)
@@ -497,7 +488,6 @@ if retrain_button:
     selected_months = st.session_state.get("selected_months", [])
     months_with_samples = st.session_state.get("months_with_samples", set())
 
-    # Vincoli UI: 1 mese e già generato
     if not ((len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)):
         st.error("Retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro).")
         st.stop()
@@ -513,28 +503,23 @@ if retrain_button:
     month_start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
     month_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
 
-    # Payload per la nuova API Kedro Trigger (job + status)
-    # NB: pipeline di training esplicita
+
     payload = {
         "start_date": month_start.isoformat(),
         "end_date": month_end.isoformat(),
         "pipeline": "training",
-        # opzionali (se vuoi loggarli lato API, non danno fastidio)
         "year": year,
         "months": [month],
         "num_samples": int(num_samples),
     }
 
-    # Parametri polling
     poll_interval_sec = 2
-    max_polls = 1800  # ~ 1h se poll_interval=2s (evita loop infinito)
+    max_polls = 1800
 
     with st.spinner("Retraining in corso..."):
         try:
-            # 1) SUBMIT JOB (POST) -> deve tornare 202 con job_id + status_url
             submit = requests.post(retrain_url, json=payload, timeout=30)
 
-            # Se non è OK/202, mostra errore e stop
             if submit.status_code not in (200, 202):
                 st.error(f"Submit retrain fallito: {submit.status_code}")
                 st.write(submit.text)
@@ -556,19 +541,14 @@ if retrain_button:
                 st.json(submit_json)
                 st.stop()
 
-            # Costruisci URL di status:
-            # - se status_url è relativo, lo agganciamo alla base di retrain_url
-            # - se non c'è status_url, usiamo convenzione /run-pipeline/{job_id}
             if status_path:
                 status_url = urljoin(retrain_url, status_path)
             else:
                 status_url = urljoin(retrain_url, f"/run-pipeline/{job_id}")
 
-            # salva in sessione (utile per debug / eventuale UI)
             st.session_state.retrain_job_id = job_id
             st.session_state.retrain_status_url = status_url
 
-            # 2) POLLING STATUS
             for _ in range(max_polls):
                 r = requests.get(status_url, timeout=30)
 
@@ -580,16 +560,13 @@ if retrain_button:
                 status_json = r.json()
                 state = status_json.get("status")
 
-                # running / completed / failed (come definito nell'API)
                 if state == "completed":
                     st.success("Retrain completato ✅")
-                    # opzionale: mostra dettagli finali
                     st.json(status_json)
                     break
 
                 if state == "failed":
                     st.error("Retrain fallito ❌")
-                    # se l'API salva stdout/stderr o error dict, lo mostriamo
                     err = status_json.get("error")
                     if err:
                         st.subheader("Dettagli errore")
@@ -598,7 +575,6 @@ if retrain_button:
                         st.json(status_json)
                     break
 
-                # ancora in corso
                 time.sleep(poll_interval_sec)
             else:
                 st.warning("Retrain ancora in esecuzione (timeout polling). Riprova a controllare più tardi.")
