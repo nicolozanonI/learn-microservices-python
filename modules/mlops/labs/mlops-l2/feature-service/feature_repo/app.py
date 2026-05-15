@@ -7,6 +7,11 @@ import os
 import calendar
 from sqlalchemy import create_engine
 from feast import FeatureStore
+from utils.evidently_integration import (
+    project_setup,
+    data_drift_check,
+    model_performance_check,
+)
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="ML Feature Generator", layout="wide")  # wide usa tutta la larghezza [3](https://github.com/streamlit/streamlit/issues/6336)[4](https://dev.to/jamesbmour/streamlit-part-6-mastering-layouts-4hci)
@@ -52,14 +57,16 @@ def _init_timeline_state():
         st.session_state.generated_end_date = None
     if "feast_start_date" not in st.session_state:
         st.session_state.feast_start_date = "2025-01-01T00:00:00+00:00"
-
-    # ---- Analyze wizard state ----
     if "analyze_pending" not in st.session_state:
-        st.session_state.analyze_pending = False          # True dopo click su Analyze (in attesa del mese current)
+        st.session_state.analyze_pending = False
     if "analyze_reference_month" not in st.session_state:
-        st.session_state.analyze_reference_month = None   # mese reference fissato al click su Analyze
+        st.session_state.analyze_reference_month = None
     if "analyze_current_month" not in st.session_state:
-        st.session_state.analyze_current_month = None     # mese current scelto dop
+        st.session_state.analyze_current_month = None
+    if "analyze_results" not in st.session_state:
+        st.session_state.analyze_results = None
+    if "analyze_last_pair" not in st.session_state:
+        st.session_state.analyze_last_pair = None
 
 
 
@@ -262,8 +269,7 @@ with bottom_right:
         st.session_state.analyze_pending = True
         st.session_state.analyze_reference_month = ref
         st.session_state.analyze_current_month = None
-
-        # svuota selezione: l'utente deve scegliere current
+        st.session_state.analyze_last_pair = None
         st.session_state.selected_months = []
         st.rerun()
 
@@ -295,6 +301,7 @@ with bottom_right:
     # Placeholder fisso per il testo -> stabilizza il layout
     hint_slot = st.empty()
     hint_slot.caption(msg if msg else " ")  # spazio per mantenere altezza costante
+
 if "btn_apicall" in st.session_state:
     pass  # solo per stabilizzare key se vuoi
 
@@ -315,6 +322,78 @@ if api_call_button:
       }}' '''
     st.subheader(f"API call (mese {NUM_TO_LABEL[month]})")
     st.code(curl_command, language="bash")
+
+def _simplify_failed_tests(failed_tests):
+    out = []
+    for t in failed_tests or []:
+        try:
+            out.append({
+                "id": getattr(t, "id", None),
+                "name": getattr(t, "name", None),
+                "column": getattr(getattr(t, "metric_config", None), "params", {}).get("column")
+                          if getattr(t, "metric_config", None) else None,
+            })
+        except Exception:
+            out.append({"name": str(t)})
+    return out
+
+
+# ---------------- LOGICA: ANALYZE STEP 2 (Evidently) ----------------
+pending = st.session_state.get("analyze_pending", False)
+ref_month = st.session_state.get("analyze_reference_month")
+selected_months = st.session_state.get("selected_months", [])
+months_with_samples = st.session_state.get("months_with_samples", set())
+
+# Siamo in pending -> aspettiamo che l'utente selezioni 1 mese current
+if pending and ref_month is not None and len(selected_months) == 1:
+    cur_month = int(selected_months[0])
+
+    if cur_month == int(ref_month):
+        st.warning("Analyze: scegli un mese current diverso dal reference.")
+    elif cur_month not in months_with_samples:
+        st.warning("Analyze: il mese current deve essere già generato (azzurro).")
+    else:
+        pair = (int(ref_month), int(cur_month))
+
+        # Evita riesecuzioni duplicate sul rerun
+        if st.session_state.get("analyze_last_pair") != pair:
+            st.session_state.analyze_last_pair = pair
+
+            year = datetime.now(timezone.utc).year
+            ref_start, ref_end = month_bounds_utc(year, int(ref_month))
+            cur_start, cur_end = month_bounds_utc(year, int(cur_month))
+
+            with st.spinner("Evidently analysis in corso..."):
+                try:
+                    project = project_setup()
+
+                    failed_data = data_drift_check(project, ref_start, ref_end, cur_start, cur_end)
+                    failed_model = model_performance_check(project, ref_start, ref_end, cur_start, cur_end)
+
+                    st.session_state.analyze_results = {
+                        "status": "OK",
+                        "reference_month": int(ref_month),
+                        "current_month": int(cur_month),
+                        "failed_data_tests_count": len(failed_data),
+                        "failed_model_tests_count": len(failed_model),
+                        "failed_data_tests": _simplify_failed_tests(failed_data),
+                        "failed_model_tests": _simplify_failed_tests(failed_model),
+                        "evidently_project_id": getattr(project, "id", None),
+                    }
+                except Exception as e:
+                    st.session_state.analyze_results = {
+                        "status": "ERROR",
+                        "error": str(e),
+                        "reference_month": int(ref_month),
+                        "current_month": int(cur_month),
+                    }
+
+            # Chiude wizard e pulisce selezione
+            st.session_state.analyze_pending = False
+            st.session_state.analyze_reference_month = None
+            st.session_state.analyze_current_month = None
+            st.session_state.selected_months = []
+            st.rerun()
 
 # ---------------- LOGICA: GENERATE (1 mese) ----------------
 if generate_button:
@@ -409,63 +488,7 @@ if generate_button:
     except Exception as e:
         st.error(f"Errore durante la generazione: {str(e)}")
 
-# ---------------- LOGICA: ANALYZE (esattamente 2 mesi, entrambi generati) ----------------
-if analyze_button:
-    selected_months = st.session_state.get("selected_months", [])
-    months_with_samples = st.session_state.get("months_with_samples", set())
 
-    if not ((len(selected_months) == 2) and set(selected_months).issubset(months_with_samples)):
-        st.error("Analyze richiede ESATTAMENTE 2 mesi selezionati e già generati (azzurri).")
-        st.stop()
-
-    # Analisi su OFFLINE STORE: prendo dati di quei 2 mesi dal DB (spaceflight_table)
-    try:
-        engine = postgres_engine()
-        year = datetime.now(timezone.utc).year
-        m1, m2 = int(selected_months[0]), int(selected_months[1])
-
-        query = f"""
-        SELECT *
-        FROM spaceflight_table
-        WHERE EXTRACT(YEAR FROM event_timestamp) = {year}
-          AND EXTRACT(MONTH FROM event_timestamp) IN ({m1}, {m2})
-        """
-        df = pd.read_sql(query, engine)
-
-        if df.empty:
-            st.warning("Nessun dato trovato nel DB per i 2 mesi selezionati.")
-            st.stop()
-
-        st.subheader("Analyze / Risultati analisi (2 mesi)")
-        st.write({
-            "rows": len(df),
-            "cols": len(df.columns),
-            "selected_months": [NUM_TO_LABEL[m] for m in selected_months],
-        })
-
-        num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        bool_cols = df.select_dtypes(include=[bool]).columns.tolist()
-
-        if num_cols:
-            st.markdown("**Statistiche numeriche**")
-            st.dataframe(df[num_cols].describe().T)
-
-        if bool_cols:
-            st.markdown("**Distribuzioni boolean**")
-            bool_summary = pd.DataFrame({
-                "true_%": (df[bool_cols].mean() * 100).round(2),
-                "true_count": df[bool_cols].sum(),
-                "false_count": (~df[bool_cols]).sum()
-            })
-            st.dataframe(bool_summary)
-
-        st.markdown("**Preview campioni**")
-        st.dataframe(df.head(50))
-
-    except Exception as e:
-        st.error(f"Errore Analyze (lettura DB): {e}")
-
-# ---------------- LOGICA: RETRAIN (1 mese, già generato) ----------------
 # ---------------- LOGICA: RETRAIN (1 mese, già generato) ----------------
 if retrain_button:
     import time
@@ -615,3 +638,31 @@ if st.session_state.get("generated", False):
       }}' '''
 
     st.code(curl_command, language="bash")
+
+# ---------------- UI POST-ANALYZE ----------------
+if st.session_state.get("analyze_results") is not None:
+    res = st.session_state.analyze_results
+    st.markdown("---")
+    st.subheader("Analyze / Evidently Results")
+
+    if res.get("status") == "OK":
+        ref_m = res["reference_month"]
+        cur_m = res["current_month"]
+        st.write({
+            "reference": NUM_TO_LABEL.get(ref_m, ref_m),
+            "current": NUM_TO_LABEL.get(cur_m, cur_m),
+            "failed_data_tests": res.get("failed_data_tests_count", 0),
+            "failed_model_tests": res.get("failed_model_tests_count", 0),
+            "evidently_project_id": res.get("evidently_project_id"),
+        })
+
+        if res.get("failed_data_tests_count", 0) > 0:
+            st.markdown("**Failed Data Drift Tests**")
+            st.dataframe(pd.DataFrame(res.get("failed_data_tests", [])))
+
+        if res.get("failed_model_tests_count", 0) > 0:
+            st.markdown("**Failed Model Performance Tests**")
+            st.dataframe(pd.DataFrame(res.get("failed_model_tests", [])))
+    else:
+        st.error("Evidently analysis fallita")
+        st.write(res)

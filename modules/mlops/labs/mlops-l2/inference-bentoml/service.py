@@ -136,7 +136,7 @@ class SpaceflightService:
 
             connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
             engine = create_engine(connection_string)
-            prediction_df.to_sql('spaceflight_prediction_table', engine, if_exists='replace', index=False)
+            prediction_df.to_sql('spaceflight_prediction_table', engine, if_exists='append', index=False)
 
             return {
                 "status": "success",
