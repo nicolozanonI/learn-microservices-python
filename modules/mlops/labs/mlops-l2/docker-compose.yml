@@ -34,7 +34,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3015:3000"
+      - "3000:3000"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/healthz" ]
       interval: 10s

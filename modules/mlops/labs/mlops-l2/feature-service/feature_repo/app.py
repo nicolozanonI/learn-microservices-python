@@ -53,15 +53,28 @@ def _init_timeline_state():
     if "feast_start_date" not in st.session_state:
         st.session_state.feast_start_date = "2025-01-01T00:00:00+00:00"
 
+    # ---- Analyze wizard state ----
+    if "analyze_pending" not in st.session_state:
+        st.session_state.analyze_pending = False          # True dopo click su Analyze (in attesa del mese current)
+    if "analyze_reference_month" not in st.session_state:
+        st.session_state.analyze_reference_month = None   # mese reference fissato al click su Analyze
+    if "analyze_current_month" not in st.session_state:
+        st.session_state.analyze_current_month = None     # mese current scelto dop
 
-def toggle_month(month_num: int):
-    sel = set(st.session_state.get("selected_months", []))
-    if month_num in sel:
-        sel.remove(month_num)
+
+
+def select_single_month(month_num: int):
+    current = st.session_state.get("selected_months", [])
+    if len(current) == 1 and current[0] == month_num:
+        st.session_state.selected_months = []
     else:
-        sel.add(month_num)
-    st.session_state.selected_months = sorted(sel)
+        st.session_state.selected_months = [month_num]
 
+def month_bounds_utc(year: int, month: int):
+    last_day = calendar.monthrange(year, month)[1]
+    start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
+    end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+    return start, end
 
 def inject_month_css(months_with_samples: set, selected_months: list):
     """
@@ -183,7 +196,7 @@ with right_panel:
 
 # Riga unica: timeline + bottoni
 st.markdown("---")
-bottom_left, bottom_right = st.columns([7.5, 2.5], vertical_alignment="center")
+bottom_left, bottom_right = st.columns([7.5, 2.5], vertical_alignment="top")
 
 with bottom_left:
     st.subheader("Timeline (1 anno / 12 mesi)")
@@ -199,7 +212,7 @@ with bottom_left:
                 lab,
                 key=f"m{m:02d}",
                 use_container_width=True,
-                on_click=toggle_month,
+                on_click=select_single_month,
                 args=(m,),
             )
 
@@ -214,28 +227,94 @@ with bottom_right:
 
     months_with_samples = st.session_state.get("months_with_samples", set())
     selected_months = st.session_state.get("selected_months", [])
+    pending = st.session_state.get("analyze_pending", False)
+    ref_month = st.session_state.get("analyze_reference_month")
 
-    # REGOLE:
-    # Generate: esattamente 1 mese (non importa se ha samples)
+    # ----------------- REGOLE BOTTONI -----------------
     generate_enabled = (len(selected_months) == 1)
 
-    # Analyze: esattamente 2 mesi e entrambi con samples
-    analyze_enabled = (len(selected_months) == 2) and set(selected_months).issubset(months_with_samples)
+    analyze_enabled = (
+        (not pending)
+        and (len(selected_months) == 1)
+        and set(selected_months).issubset(months_with_samples)
+    )
 
-    # Retrain: esattamente 1 mese e deve avere samples
     retrain_enabled = (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)
+    api_call_enabled = (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)
 
+    # ----------------- BOTTONI (sempre gli stessi, stesso ordine) -----------------
     analyze_button = st.button("Analyze", key="btn_analyze", use_container_width=True, disabled=not analyze_enabled)
     generate_button = st.button("Generate", key="btn_generate", type="primary", use_container_width=True, disabled=not generate_enabled)
     retrain_button = st.button("Retrain", key="btn_retrain", use_container_width=True, disabled=not retrain_enabled)
+    api_call_button = st.button("📄 API call", key="btn_apicall", use_container_width=True, disabled=not api_call_enabled)
 
-    # Hint UX
-    if not generate_enabled:
-        st.caption("Generate: seleziona ESATTAMENTE 1 mese.")
-    elif not analyze_enabled:
-        st.caption("Analyze: seleziona ESATTAMENTE 2 mesi già generati (azzurri).")
-    elif not retrain_enabled:
-        st.caption("Retrain: seleziona ESATTAMENTE 1 mese già generato (azzurro).")
+    # Bottone "Annulla Analyze" SEMPRE presente -> niente shift
+    cancel_analyze = st.button(
+        "Annulla Analyze",
+        key="btn_cancel_analyze",
+        use_container_width=True,
+        disabled=not pending,
+    )
+
+    # ----------------- CLICK ANALYZE (STEP 1) -----------------
+    if analyze_button:
+        ref = int(selected_months[0])
+        st.session_state.analyze_pending = True
+        st.session_state.analyze_reference_month = ref
+        st.session_state.analyze_current_month = None
+
+        # svuota selezione: l'utente deve scegliere current
+        st.session_state.selected_months = []
+        st.rerun()
+
+    # ----------------- CANCEL ANALYZE -----------------
+    if cancel_analyze and pending:
+        st.session_state.analyze_pending = False
+        st.session_state.analyze_reference_month = None
+        st.session_state.analyze_current_month = None
+        st.rerun()
+
+    # ----------------- HINT UX: UNA SOLA RIGA, SEMPRE PRESENTE -----------------
+    # Così non “compare/scompare” blocchi diversi (info/caption) che cambiano altezza.
+    msg = ""
+    if pending and ref_month is not None:
+        msg = (
+            f"Analyze (Step 2): reference = {NUM_TO_LABEL.get(ref_month, ref_month)}. "
+            f"Ora seleziona un secondo mese (current) già generato (azzurro)."
+        )
+    else:
+        if not generate_enabled:
+            msg = "Generate: seleziona ESATTAMENTE 1 mese."
+        elif not analyze_enabled:
+            msg = "Analyze: seleziona 1 mese già generato (azzurro) per impostarlo come reference."
+        elif not retrain_enabled:
+            msg = "Retrain: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
+        elif not api_call_enabled:
+            msg = "API call: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
+
+    # Placeholder fisso per il testo -> stabilizza il layout
+    hint_slot = st.empty()
+    hint_slot.caption(msg if msg else " ")  # spazio per mantenere altezza costante
+if "btn_apicall" in st.session_state:
+    pass  # solo per stabilizzare key se vuoi
+
+# Stampa curl quando si clicca API call
+if 'btn_apicall' not in st.session_state:
+    st.session_state.btn_apicall = False  # non obbligatorio, ma ok
+
+if api_call_button:
+    year = datetime.now(timezone.utc).year
+    month = int(st.session_state.selected_months[0])
+    m_start, m_end = month_bounds_utc(year, month)
+
+    curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
+  -H "Content-Type: application/json" \\
+  -d '{{
+        "start_date": "{m_start.isoformat()}",
+        "end_date": "{m_end.isoformat()}"
+      }}' '''
+    st.subheader(f"API call (mese {NUM_TO_LABEL[month]})")
+    st.code(curl_command, language="bash")
 
 # ---------------- LOGICA: GENERATE (1 mese) ----------------
 if generate_button:
@@ -322,6 +401,7 @@ if generate_button:
                 st.session_state.feast_start_date = "2025-01-01T00:00:00+00:00"
 
             upload_to_minio(current_df, MINIO_CURRENT_OBJ + generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
+            st.rerun()
 
         except Exception as e:
             st.session_state.postgres_error = str(e)
