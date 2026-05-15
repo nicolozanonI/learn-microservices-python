@@ -74,13 +74,25 @@ docker compose up --build -d
 
 ## Feature service
 
-Open a shell in the **feature-service**:
+### Using UI
+
+Open the feature service UI at:
+
+```
+http://localhost:8501/
+```
+
+Then click on "Feast apply" button to create the registry and to populate it with all the features defined in ```spaceflight_features.py```:
+
+### Using CLI
+
+Alternatively, you can open a shell in the **feature-service**:
 
 ```bash
 docker compose exec feature-service bash
 ```
+and launch the following commands:
 
-Create the registry and populate it with all the features defined in ```spaceflight_features.py```:
 ```bash
 feast apply
 exit
@@ -94,7 +106,7 @@ http://localhost:8888/p/spaceflight_project
 
 ---
 
-## Model training
+## Dataset generation and model training
 
 Optionally, explore and experiment manually using the notebooks in:
 
@@ -102,12 +114,8 @@ Optionally, explore and experiment manually using the notebooks in:
 training-pipeline/notebooks
 ```
 
-To run the **automatic training pipeline** and produce a new model:
-
-```bash
-curl -X POST http://localhost:8005/run-pipeline \
-     -H "Content-Type: application/json"
-```
+Change the values range of the new samples with the sliders and choose a month, then click "Generate" to create a new dataset. Then you can click 
+"Train/retrain" to train a new model on that dataset
 
 Verify that a new model appears in the MLflow Model Registry:
 
@@ -157,17 +165,6 @@ curl -X POST http://localhost:3000/predict \
 
 ---
 
-## Dataset generation and analysis
-
-### Generate a new dataset
-
-Creates a dataset with predictions.
-Input data are generated with the **feature-service**:
-
-```
-http://localhost:8501/
-```
-Change the values range of the new samples with the sliders, then generate the new dataset.
 
 ### Batch scoring
 
@@ -183,18 +180,16 @@ curl -X POST http://localhost:3000/batch-scoring \
 ```
 
 *batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after each 
-samples generation, under the "Generate new samples" button.
+samples generation, under the buttons.
 
 ---
 
 ### Analyze data drift and performance changes
 
-Run the analysis comparing reference and current datasets:
-
-```bash
-curl -X GET http://localhost:8100/analyze
-```
-
-Finally, open **Evidently AI** and inspect the results in the UI. Reference dataset is the one used in the
+From the feature service UI, you can run the analysis comparing reference and current datasets:
+1) Select a new month and generate a new dataset.
+2) Copy the API call and perform batch-scoring on the new dataset
+3) Select the month that you consider reference, click the "Analyze" button and select a second month that will be used as current dataset
+4) Finally, open **Evidently AI** and inspect the results in the UI. Reference dataset is the one used in the
 **training-pipeline**, current dataset is the one generated with the **feature-service**
 
