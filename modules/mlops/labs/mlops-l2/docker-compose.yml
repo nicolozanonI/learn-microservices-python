@@ -117,32 +117,6 @@ services:
       - FSSPEC_S3_ENDPOINT_URL=${MINIO_URL}
     command: [ "--workspace", "s3://evidently-ai/workspace" ]
 
-  production-api:
-      build: production-api
-      depends_on:
-        evidently-ai:
-          condition: service_healthy
-        inference:
-          condition: service_started
-        minio:
-          condition: service_started
-        postgres:
-          condition: service_healthy
-
-      environment:
-        - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-        - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-        - MINIO_URL=${MINIO_URL}
-        - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
-        - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
-        - AWS_DEFAULT_REGION=eu-central-1
-        - BENTO_URL=${BENTO_URL}
-        - KEDRO_API_URL=${KEDRO_API_URL}
-        - TZ=UTC
-      volumes:
-        - ./production-api/data:/app/data
-      ports:
-        - "8100:8100"
 
   feature-service:
     build: feature-service

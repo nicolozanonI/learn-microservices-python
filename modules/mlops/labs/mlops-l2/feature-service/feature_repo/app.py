@@ -89,47 +89,100 @@ def month_bounds_utc(year: int, month: int):
     end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
     return start, end
 
+
 def inject_month_css(months_with_samples: set, selected_months: list):
-    """
-    Azzurro chiaro = mese con samples già generati.
-    Outline = mese selezionato.
-    """
     css = ["<style>"]
+
+    # ─── LINEA: background-image sul container flex delle colonne ───────────
+    # Targeting via key "timeline_row" → niente z-index battle
+    css.append("""
+    .st-key-timeline_row [data-testid="stHorizontalBlock"] {
+        background-image: linear-gradient(
+            to bottom,
+            transparent         calc(50% - 2px),
+            #e0e0e0             calc(50% - 2px),
+            #9e9e9e             50%,
+            #e0e0e0             calc(50% + 2px),
+            transparent         calc(50% + 2px)
+        );
+        background-repeat: no-repeat;
+        background-size: 95% 100%;       /* ← larghezza linea */
+        background-position: 4.5% 0;    /* ← offset da sinistra */
+        padding: 1rem 0;
+    }
+    """)
+
     for _, m in MONTHS_IT:
         key = f"m{m:02d}"
         sel = f".st-key-{key} button"
 
-        if m in months_with_samples:
-            css.append(f"""{sel} {{
-                background-color: #B3E5FC !important;
-                color: #0D47A1 !important;
-                border: 1px solid #4FC3F7 !important;
-                border-radius: 999px !important;
-                padding: 0.20rem 0.55rem !important;
-                min-height: 2.2rem !important;
-            }}""")
-            css.append(f"""{sel}:hover {{
-                background-color: #81D4FA !important;
-                border-color: #29B6F6 !important;
-                color: #0D47A1 !important;
-            }}""")
-        else:
-            css.append(f"""{sel} {{
-                background-color: transparent !important;
-                color: inherit !important;
-                border: 1px solid rgba(49,51,63,0.25) !important;
-                border-radius: 999px !important;
-                padding: 0.20rem 0.55rem !important;
-                min-height: 2.2rem !important;
-            }}""")
-            css.append(f"""{sel}:hover {{
-                border-color: rgba(49,51,63,0.55) !important;
-            }}""")
+        # Stile base del nodo
+        css.append(f"""{sel} {{
+            background-color: {'#B3E5FC' if m in months_with_samples else 'white'} !important;
+            color: {'#0D47A1' if m in months_with_samples else '#424242'} !important;
+            border: 2px solid {'#29B6F6' if m in months_with_samples else '#bdbdbd'} !important;
+            border-radius: 50% !important;
+            width: 44px !important;
+            height: 44px !important;
+            min-width: 44px !important;
+            min-height: 44px !important;
+            padding: 0 !important;
+            font-weight: 600;
+            font-size: 0.9rem !important;
+            transition: all 0.25s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }}""")
 
+        # Hover
+        css.append(f"""{sel}:hover {{
+            transform: translateY(-2px) scale(1.08);
+            border-color: {'#0288D1' if m in months_with_samples else '#616161'} !important;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            color: {'#01579B' if m in months_with_samples else '#212121'} !important;
+        }}""")
+
+        # Selected
+        # Selected
         if m in selected_months:
-            css.append(f"""{sel} {{
-                box-shadow: 0 0 0 0.22rem rgba(30,136,229,.35) !important;
-            }}""")
+            if m in months_with_samples:
+                # Selezionato + già generato → azzurro pieno con anello blu
+                css.append(f"""{sel} {{
+                            background-color: #B3E5FC !important;
+                            color: #01579B !important;
+                            border: 3px solid #1976D2 !important;
+                            box-shadow:
+                                0 0 0 4px rgba(25,118,210,0.30),
+                                0 4px 12px rgba(25,118,210,0.35) !important;
+                            transform: scale(1.12);
+                            font-weight: 700 !important;
+                        }}""")
+                css.append(f"""{sel}:hover {{
+                            transform: translateY(-2px) scale(1.12);
+                            box-shadow:
+                                0 0 0 5px rgba(25,118,210,0.40),
+                                0 6px 20px rgba(25,118,210,0.45) !important;
+                        }}""")
+            else:
+                # Selezionato ma non ancora generato → sfondo bianco con anello
+                css.append(f"""{sel} {{
+                            background-color: white !important;
+                            color: #1976D2 !important;
+                            border: 3px solid #1976D2 !important;
+                            box-shadow:
+                                0 0 0 4px rgba(25,118,210,0.25),
+                                0 4px 12px rgba(25,118,210,0.35) !important;
+                            transform: scale(1.12);
+                            font-weight: 700 !important;
+                        }}""")
+                css.append(f"""{sel}:hover {{
+                            transform: translateY(-2px) scale(1.12);
+                            box-shadow:
+                                0 0 0 5px rgba(25,118,210,0.35),
+                                0 6px 20px rgba(25,118,210,0.45) !important;
+                        }}""")
 
     css.append("</style>")
     st.markdown("\n".join(css), unsafe_allow_html=True)
@@ -250,35 +303,29 @@ with right_panel:
 st.markdown("---")
 bottom_left, bottom_right = st.columns([7.5, 2.5], vertical_alignment="top")
 
+months_with_samples = st.session_state.get("months_with_samples", set())
+selected_months = st.session_state.get("selected_months", [])
+
 with bottom_left:
     st.subheader("Timeline (1 anno / 12 mesi)")
-    months_with_samples = st.session_state.months_with_samples
-    selected_months = st.session_state.selected_months
-
     inject_month_css(months_with_samples, selected_months)
 
-    mcols = st.columns(12, gap="small")
-    for i, (lab, m) in enumerate(MONTHS_IT):
-        with mcols[i]:
-            st.button(
-                lab,
-                key=f"m{m:02d}",
-                use_container_width=True,
-                on_click=select_single_month,
-                args=(m,),
-            )
-
-    if selected_months:
-        sel_labels = [NUM_TO_LABEL[m] for m in selected_months]
-        st.caption(f"Mesi selezionati: {', '.join(sel_labels)}")
-    else:
-        st.caption("Nessun mese selezionato.")
+    timeline = st.container(key="timeline_row")   # ← il key è il fulcro del CSS
+    with timeline:
+        mcols = st.columns(12, gap="small")
+        for i, (lab, m) in enumerate(MONTHS_IT):
+            with mcols[i]:
+                st.button(
+                    lab,
+                    key=f"m{m:02d}",
+                    use_container_width=True,
+                    on_click=select_single_month,
+                    args=(m,),
+                )
 
 with bottom_right:
     inject_action_buttons_css()
 
-    months_with_samples = st.session_state.get("months_with_samples", set())
-    selected_months = st.session_state.get("selected_months", [])
     pending = st.session_state.get("analyze_pending", False)
     ref_month = st.session_state.get("analyze_reference_month")
 
