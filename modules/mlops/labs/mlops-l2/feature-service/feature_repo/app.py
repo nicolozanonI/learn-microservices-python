@@ -76,12 +76,21 @@ def _init_timeline_state():
 
 
 
-def select_single_month(month_num: int):
+def toggle_month(month_num: int):
     current = st.session_state.get("selected_months", [])
-    if len(current) == 1 and current[0] == month_num:
-        st.session_state.selected_months = []
+
+    if month_num in current:
+        current.remove(month_num)
     else:
-        st.session_state.selected_months = [month_num]
+        current.append(month_num)
+
+    current = sorted(current)
+
+    # ✅ se non consecutivi → resetta a solo ultimo clic
+    if not are_consecutive(current) and len(current) > 1:
+        current = [month_num]
+
+    st.session_state.selected_months = current
 
 def month_bounds_utc(year: int, month: int):
     last_day = calendar.monthrange(year, month)[1]
@@ -89,7 +98,24 @@ def month_bounds_utc(year: int, month: int):
     end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
     return start, end
 
+def are_consecutive(months: list[int]) -> bool:
+    if not months:
+        return False
+    months_sorted = sorted(months)
+    return all(b - a == 1 for a, b in zip(months_sorted, months_sorted[1:]))
 
+def multi_month_bounds(year: int, months: list[int]):
+    months_sorted = sorted(months)
+
+    start_month = months_sorted[0]
+    end_month = months_sorted[-1]
+
+    start = datetime(year, start_month, 1, tzinfo=timezone.utc)
+
+    last_day = calendar.monthrange(year, end_month)[1]
+    end = datetime(year, end_month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+
+    return start, end
 def inject_month_css(months_with_samples: set, selected_months: list):
     css = ["<style>"]
 
@@ -269,6 +295,18 @@ def postgres_engine():
 _init_timeline_state()
 
 st.title("ML Feature Generator")
+
+st.markdown("**Create or update a feature store deployment:**")
+
+st.button(
+    "🧩 Feast apply",
+    key="btn_feast_apply",
+    disabled=st.session_state.get("feast_apply_running", False),
+    on_click=run_feast_apply,
+)
+
+st.markdown("---")
+
 st.write("Configura features range and generate new samples")
 
 top_left, top_right = st.columns([2, 1])
@@ -319,7 +357,7 @@ with bottom_left:
                     lab,
                     key=f"m{m:02d}",
                     use_container_width=True,
-                    on_click=select_single_month,
+                    on_click=toggle_month,
                     args=(m,),
                 )
 
@@ -330,7 +368,9 @@ with bottom_right:
     ref_month = st.session_state.get("analyze_reference_month")
 
     # ----------------- REGOLE BOTTONI -----------------
-    generate_enabled = (len(selected_months) == 1)
+    generate_enabled = (
+            len(selected_months) >= 1 and are_consecutive(selected_months)
+    )
 
     analyze_enabled = (
         (not pending)
@@ -338,17 +378,17 @@ with bottom_right:
         and set(selected_months).issubset(months_with_samples)
     )
 
-    retrain_enabled = (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)
-    api_call_enabled = (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)
+    retrain_enabled = (
+            are_consecutive(selected_months)
+            and set(selected_months).issubset(months_with_samples)
+    )
+
+    api_call_enabled = (
+            are_consecutive(selected_months)
+            and set(selected_months).issubset(months_with_samples)
+    )
 
     # ----------------- BOTTONI (sempre gli stessi, stesso ordine) -----------------
-    feast_apply_btn = st.button(
-        "🧩 Feast apply",
-        key="btn_feast_apply",
-        use_container_width=True,
-        disabled=st.session_state.get("feast_apply_running", False),
-        on_click=run_feast_apply,
-    )
     analyze_button = st.button("Analyze", key="btn_analyze", use_container_width=True, disabled=not analyze_enabled)
     generate_button = st.button("Generate", key="btn_generate", type="primary", use_container_width=True, disabled=not generate_enabled)
     retrain_button = st.button("Train/retrain", key="btn_retrain", use_container_width=True, disabled=not retrain_enabled)
@@ -385,13 +425,13 @@ with bottom_right:
         )
     else:
         if not generate_enabled:
-            msg = "Generate: seleziona ESATTAMENTE 1 mese."
+            msg = "Generate: seleziona uno o più mesi consecutivi."
         elif not analyze_enabled:
             msg = "Analyze: seleziona 1 mese già generato (azzurro) per impostarlo come reference."
         elif not retrain_enabled:
-            msg = "Train/retrain: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
+            msg = "Train/retrain: seleziona mesi consecutivi già generat già generato (azzurro)."
         elif not api_call_enabled:
-            msg = "API call: seleziona ESATTAMENTE 1 mese già generato (azzurro)."
+            msg = "API call: seleziona mesi consecutivi già generati"
 
     hint_slot = st.empty()
     hint_slot.caption(msg if msg else " ")
@@ -404,8 +444,12 @@ if 'btn_apicall' not in st.session_state:
 
 if api_call_button:
     year = datetime.now(timezone.utc).year
-    month = int(st.session_state.selected_months[0])
-    m_start, m_end = month_bounds_utc(year, month)
+
+    # ✅ calcolo range multi-mese
+    m_start, m_end = multi_month_bounds(year, selected_months)
+
+    # ✅ labels leggibili
+    labels = [NUM_TO_LABEL[m] for m in selected_months]
 
     curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
   -H "Content-Type: application/json" \\
@@ -413,9 +457,11 @@ if api_call_button:
         "start_date": "{m_start.isoformat()}",
         "end_date": "{m_end.isoformat()}"
       }}' '''
-    st.subheader(f"API call (mese {NUM_TO_LABEL[month]})")
-    st.code(curl_command, language="bash")
 
+    # ✅ titolo aggiornato
+    st.subheader(f"API call ({', '.join(labels)})")
+
+    st.code(curl_command, language="bash")
 def _simplify_failed_tests(failed_tests):
     out = []
     for t in failed_tests or []:
@@ -489,7 +535,7 @@ if pending and ref_month is not None and len(selected_months) == 1:
 if generate_button:
     try:
         selected_months = st.session_state.get("selected_months", [])
-        if len(selected_months) != 1:
+        if not are_consecutive(selected_months):
             st.error("Generate richiede ESATTAMENTE 1 mese selezionato.")
             st.stop()
 
@@ -516,12 +562,7 @@ if generate_button:
         current_df['price'] = np.random.uniform(price_range[0], price_range[1], len(current_df)).round(1)
 
         year = datetime.now(timezone.utc).year
-        month = int(selected_months[0])
-
-        last_day = calendar.monthrange(year, month)[1]
-
-        month_start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
-        month_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+        month_start, month_end = multi_month_bounds(year, selected_months)
 
         start_u = int(month_start.timestamp())
         end_u = int(month_end.timestamp())
@@ -538,11 +579,13 @@ if generate_button:
         st.session_state.postgres_success = False
         st.session_state.postgres_error = None
 
-        st.session_state.months_with_samples.update([month])
-        st.session_state.month_samples_meta[month] = {
-            "last_ts": generation_timestamp.isoformat(),
-            "count": int(num_samples),
-        }
+        st.session_state.months_with_samples.update(selected_months)
+
+        for m in selected_months:
+            st.session_state.month_samples_meta[m] = {
+                "last_ts": generation_timestamp.isoformat(),
+                "count": int(num_samples),
+            }
 
         try:
             engine = postgres_engine()
@@ -581,7 +624,7 @@ if retrain_button:
     selected_months = st.session_state.get("selected_months", [])
     months_with_samples = st.session_state.get("months_with_samples", set())
 
-    if not ((len(selected_months) == 1) and set(selected_months).issubset(months_with_samples)):
+    if not (are_consecutive(selected_months) and set(selected_months).issubset(months_with_samples)):
         st.error("Train/retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro).")
         st.stop()
 
@@ -591,18 +634,18 @@ if retrain_button:
         st.stop()
 
     year = datetime.now(timezone.utc).year
-    month = int(selected_months[0])
-    last_day = calendar.monthrange(year, month)[1]
-    month_start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
-    month_end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
 
+    month_start, month_end = multi_month_bounds(
+        datetime.now(timezone.utc).year,
+        selected_months
+    )
 
     payload = {
         "start_date": month_start.isoformat(),
         "end_date": month_end.isoformat(),
         "pipeline": "training",
         "year": year,
-        "months": [month],
+        "months": selected_months,
         "num_samples": int(num_samples),
     }
 
