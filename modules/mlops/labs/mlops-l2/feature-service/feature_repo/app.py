@@ -137,7 +137,7 @@ NUM_TO_LABEL = {num: lab for lab, num in MONTHS_IT}
 # ---------------- STATE + UI HELPERS ----------------
 def _init_timeline_state():
     if "selected_months" not in st.session_state:
-        st.session_state.selected_months = [datetime.now().month]
+        st.session_state.selected_months = [1]
     if "months_with_samples" not in st.session_state:
         st.session_state.months_with_samples = set()
     if "month_samples_meta" not in st.session_state:

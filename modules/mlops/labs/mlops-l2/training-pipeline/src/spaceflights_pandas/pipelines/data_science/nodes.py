@@ -67,8 +67,6 @@ def split_data(start_date: str, end_date: str, parameters: dict) -> tuple:
     start_dt = pd.to_datetime(start_date, utc=True)
     end_dt = pd.to_datetime(end_date, utc=True)
 
-    # Retrieval storico per training (Feast pattern)
-    # Feast supporta training data generation via get_historical_features(...) [1](https://docs.feast.dev/getting-started/concepts/feature-retrieval)
     training_job = store.get_historical_features(
         features=spaceflight_features,
         start_date=start_dt,
@@ -77,7 +75,6 @@ def split_data(start_date: str, end_date: str, parameters: dict) -> tuple:
 
     training_df = training_job.to_df()
 
-    # (opzionale) log dataset a MLflow come artifact
     csv_path = "./data/05_model_input/training_input_table.csv"
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     training_df.to_csv(csv_path, index=False)
@@ -124,31 +121,34 @@ def train_model(X_train: pd.DataFrame, y_train: pd.Series, training_df: pd.DataF
     client = mlflow.tracking.MlflowClient()
     versions = client.search_model_versions(
         filter_string="name='spaceflights-kedro'",
-        max_results=1000,  # o un numero ragionevole
+        max_results=1000,
     )
 
     if not versions:
         raise ValueError("Nessuna model version trovata per 'spaceflights-kedro' in MLflow Registry.")
 
-    # mv.version è stringa -> cast a int per confronto robusto
     mv = max(versions, key=lambda v: int(v.version))
     model_name = mv.name
     model_version = mv.version
     store = FeatureStore(repo_path=os.getcwd())
     run_id = mlflow.active_run().info.run_id
 
+    meta = training_job.metadata
+    start_ts = meta.min_event_timestamp
+    end_ts = meta.max_event_timestamp
+
     saved_dataset = store.create_saved_dataset(
-        from_=training_job,  # ✅ QUI
+        from_=training_job,
         name=f"training_dataset_{model_version}",
         storage=SavedDatasetPostgreSQLStorage(
-            table_ref="training_dataset_table"
+            table_ref=f"training_dataset_{model_version}"
         ),
         tags={
             "model_name": model_name,
             "model_version": str(model_version),
             "created_at": datetime.now(tz=timezone.utc).isoformat(),
-            "start_date": parameters.get("start_date", ""),
-            "end_date": parameters.get("end_date", ""),
+            "start_date": start_ts.isoformat(),
+            "end_date": end_ts.isoformat(),
             "mlflow_run_id": run_id,
         },
     )
