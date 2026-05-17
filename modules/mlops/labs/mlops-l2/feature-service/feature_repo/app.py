@@ -26,6 +26,99 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.65rem; }
 </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<style>
+
+/* CONTENITORE */
+.st-key-action_keypad {
+  padding-top: 0.25rem;
+}
+
+/* DIMENSIONE BOTTONI (questo è già ok) */
+.st-key-pad_analyze button,
+.st-key-pad_generate button,
+.st-key-pad_retrain button,
+.st-key-pad_api button,
+.st-key-pad_cancel button {
+  width: 180px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  border-radius: 12px !important;
+  font-size: 0.82rem !important;
+  font-weight: 650 !important;
+  line-height: 1.05rem !important;
+  white-space: nowrap !important;
+}
+
+
+/* ✅ ✅ ✅ COLORI (AGGIUNGI QUESTA PARTE) */
+
+/* Generate (blu) */
+.st-key-pad_generate button {
+  background-color: #1976D2 !important;
+  color: white !important;
+}
+
+/* Analyze (viola) */
+.st-key-pad_analyze button {
+  background-color: #7B1FA2 !important;
+  color: white !important;
+}
+
+/* Retrain (verde) */
+.st-key-pad_retrain button {
+  background-color: #2E7D32 !important;
+  color: white !important;
+}
+
+/* API (arancione) */
+.st-key-pad_api button {
+  background-color: #F57C00 !important;
+  color: white !important;
+}
+
+/* Cancel (rosso) */
+.st-key-pad_cancel button {
+  background-color: #D32F2F !important;
+  color: white !important;
+}
+
+
+/* CENTRATURA */
+.st-key-pad_analyze button > div,
+.st-key-pad_generate button > div,
+.st-key-pad_retrain button > div,
+.st-key-pad_api button > div,
+.st-key-pad_cancel button > div {
+  justify-content: center !important;
+}
+
+
+/* HOVER migliorato */
+.st-key-pad_analyze button:hover,
+.st-key-pad_generate button:hover,
+.st-key-pad_retrain button:hover,
+.st-key-pad_api button:hover,
+.st-key-pad_cancel button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
+
+/* DISABLED (importantissimo) */
+.st-key-pad_generate button:disabled,
+.st-key-pad_analyze button:disabled,
+.st-key-pad_retrain button:disabled,
+.st-key-pad_api button:disabled,
+.st-key-pad_cancel button:disabled {
+  background-color: #eeeeee !important;
+  color: #9e9e9e !important;
+  border: 1px solid #cccccc !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 # ---------------- ENV / CONST ----------------
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
@@ -86,7 +179,6 @@ def toggle_month(month_num: int):
 
     current = sorted(current)
 
-    # ✅ se non consecutivi → resetta a solo ultimo clic
     if not are_consecutive(current) and len(current) > 1:
         current = [month_num]
 
@@ -171,10 +263,8 @@ def inject_month_css(months_with_samples: set, selected_months: list):
         }}""")
 
         # Selected
-        # Selected
         if m in selected_months:
             if m in months_with_samples:
-                # Selezionato + già generato → azzurro pieno con anello blu
                 css.append(f"""{sel} {{
                             background-color: #B3E5FC !important;
                             color: #01579B !important;
@@ -332,23 +422,23 @@ with left_panel:
 
 with right_panel:
     st.subheader("Boolean features probability")
-    st.write("Set probability (0-100%) of True values")
     d_check_prob = st.slider("D Check Complete (%)", 0, 100, 70, 1)
     moon_clearance_prob = st.slider("Moon Clearance Complete (%)", 0, 100, 60, 1)
     iata_approved_prob = st.slider("IATA Approved (%)", 0, 100, 50, 1)
 
-
 st.markdown("---")
-bottom_left, bottom_right = st.columns([7.5, 2.5], vertical_alignment="top")
 
 months_with_samples = st.session_state.get("months_with_samples", set())
 selected_months = st.session_state.get("selected_months", [])
 
-with bottom_left:
+# 2 colonne: timeline larga + keypad stretta
+left, right = st.columns([7.2, 2.8], gap="small", vertical_alignment="top")
+
+with left:
     st.subheader("Timeline (1 anno / 12 mesi)")
     inject_month_css(months_with_samples, selected_months)
 
-    timeline = st.container(key="timeline_row")   # ← il key è il fulcro del CSS
+    timeline = st.container(key="timeline_row")
     with timeline:
         mcols = st.columns(12, gap="small")
         for i, (lab, m) in enumerate(MONTHS_IT):
@@ -356,51 +446,44 @@ with bottom_left:
                 st.button(
                     lab,
                     key=f"m{m:02d}",
-                    use_container_width=True,
                     on_click=toggle_month,
                     args=(m,),
+                    use_container_width=True,
                 )
 
-with bottom_right:
-    inject_action_buttons_css()
-
+with right:
+    # --- REGOLE BOTTONI (stesse tue) ---
     pending = st.session_state.get("analyze_pending", False)
     ref_month = st.session_state.get("analyze_reference_month")
 
-    # ----------------- REGOLE BOTTONI -----------------
-    generate_enabled = (
-            len(selected_months) >= 1 and are_consecutive(selected_months)
-    )
+    generate_enabled = (len(selected_months) >= 1 and are_consecutive(selected_months))
+    analyze_enabled  = ((not pending) and (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples))
+    retrain_enabled  = (are_consecutive(selected_months) and set(selected_months).issubset(months_with_samples))
+    api_call_enabled = (are_consecutive(selected_months) and set(selected_months).issubset(months_with_samples))
 
-    analyze_enabled = (
-        (not pending)
-        and (len(selected_months) == 1)
-        and set(selected_months).issubset(months_with_samples)
-    )
+    # --- KEYpad 2x2 + 1 ---
+    keypad = st.container(key="action_keypad")
+    with keypad:
+        # Riga 1
+        r1c1, r1c2 = st.columns(2, gap="xsmall")
+        with r1c1:
+            generate_button = st.button("✨\nGenerate", key="pad_generate", type="primary", disabled=not generate_enabled, width="content")  #
+        with r1c2:
+            analyze_button = st.button("🔎\nAnalyze", key="pad_analyze", disabled=not analyze_enabled, width="content")
 
-    retrain_enabled = (
-            are_consecutive(selected_months)
-            and set(selected_months).issubset(months_with_samples)
-    )
+        r2c1, r2c2 = st.columns(2, gap="xsmall")
+        with r2c1:
+            retrain_button = st.button("️🔁\nTrain/Retrain", key="pad_retrain", disabled=not retrain_enabled, width="content")  #
+        with r2c2:
+            cancel_analyze = st.button("✖️\nCancel", key="pad_cancel", disabled=not pending, width="content")  #
 
-    api_call_enabled = (
-            are_consecutive(selected_months)
-            and set(selected_months).issubset(months_with_samples)
-    )
+        r3c1, r3c2 = st.columns(2, gap="xsmall")
+        with r3c1:
+            api_call_button = st.button("📄\nAPI", key="pad_api", disabled=not api_call_enabled, width="content")
+        with r3c2:
+            st.write("")
 
-    # ----------------- BOTTONI (sempre gli stessi, stesso ordine) -----------------
-    analyze_button = st.button("Analyze", key="btn_analyze", use_container_width=True, disabled=not analyze_enabled)
-    generate_button = st.button("Generate", key="btn_generate", type="primary", use_container_width=True, disabled=not generate_enabled)
-    retrain_button = st.button("Train/retrain", key="btn_retrain", use_container_width=True, disabled=not retrain_enabled)
-    api_call_button = st.button("📄 API call", key="btn_apicall", use_container_width=True, disabled=not api_call_enabled)
-
-    cancel_analyze = st.button(
-        "Annulla Analyze",
-        key="btn_cancel_analyze",
-        use_container_width=True,
-        disabled=not pending,
-    )
-
+    # --- CLICK HANDLERS (identici ai tuoi) ---
     if analyze_button:
         ref = int(selected_months[0])
         st.session_state.analyze_pending = True
@@ -416,26 +499,20 @@ with bottom_right:
         st.session_state.analyze_current_month = None
         st.rerun()
 
-
+    # --- HINT (sotto la tastierina) ---
     msg = ""
     if pending and ref_month is not None:
-        msg = (
-            f"Analyze (Step 2): reference = {NUM_TO_LABEL.get(ref_month, ref_month)}. "
-            f"Ora seleziona un secondo mese (current) già generato (azzurro)."
-        )
+        msg = f"Step 2: reference = {NUM_TO_LABEL.get(ref_month, ref_month)} → scegli current (azzurro)."
     else:
         if not generate_enabled:
-            msg = "Generate: seleziona uno o più mesi consecutivi."
+            msg = "Generate: seleziona mesi consecutivi."
         elif not analyze_enabled:
-            msg = "Analyze: seleziona 1 mese già generato (azzurro) per impostarlo come reference."
+            msg = "Analyze: seleziona 1 mese già generato."
         elif not retrain_enabled:
-            msg = "Train/retrain: seleziona mesi consecutivi già generat già generato (azzurro)."
+            msg = "Train/Retrain: seleziona mesi consecutivi già generati."
         elif not api_call_enabled:
-            msg = "API call: seleziona mesi consecutivi già generati"
-
-    hint_slot = st.empty()
-    hint_slot.caption(msg if msg else " ")
-
+            msg = "API: seleziona mesi consecutivi già generati."
+    st.caption(msg if msg else " ")
 if "btn_apicall" in st.session_state:
     pass
 
@@ -445,10 +522,8 @@ if 'btn_apicall' not in st.session_state:
 if api_call_button:
     year = datetime.now(timezone.utc).year
 
-    # ✅ calcolo range multi-mese
     m_start, m_end = multi_month_bounds(year, selected_months)
 
-    # ✅ labels leggibili
     labels = [NUM_TO_LABEL[m] for m in selected_months]
 
     curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
@@ -458,7 +533,6 @@ if api_call_button:
         "end_date": "{m_end.isoformat()}"
       }}' '''
 
-    # ✅ titolo aggiornato
     st.subheader(f"API call ({', '.join(labels)})")
 
     st.code(curl_command, language="bash")

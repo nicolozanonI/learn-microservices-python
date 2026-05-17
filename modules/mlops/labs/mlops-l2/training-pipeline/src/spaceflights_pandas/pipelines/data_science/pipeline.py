@@ -7,12 +7,12 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=split_data,
                 inputs=["params:start_date", "params:end_date", "params:model_options"],
-                outputs=["X_train", "X_test", "y_train", "y_test"],
+                outputs=["X_train", "X_test", "y_train", "y_test", "training_df", "training_job"],
                 name="split_data_node",
             ),
             node(
                 func=train_model,
-                inputs=["X_train", "y_train", "params:model_options"],
+                inputs=["X_train", "y_train", "training_df", "training_job", "params:model_options"],
                 outputs="regressor",
                 name="train_model_node",
             ),

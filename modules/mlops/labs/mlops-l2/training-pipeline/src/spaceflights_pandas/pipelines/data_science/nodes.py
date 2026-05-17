@@ -9,6 +9,7 @@ import mlflow
 from mlflow.models import infer_signature
 
 from feast import FeatureStore, FeatureService
+from feast.infra.offline_stores.offline_store import RetrievalJob
 from datetime import datetime, timezone
 from feast.infra.offline_stores.contrib.postgres_offline_store.postgres_source import SavedDatasetPostgreSQLStorage
 
@@ -92,11 +93,11 @@ def split_data(start_date: str, end_date: str, parameters: dict) -> tuple:
         random_state=parameters["random_state"],
     )
 
-    return X_train, X_test, y_train, y_test
+    return X_train, X_test, y_train, y_test, training_df, training_job
 
 
 
-def train_model(X_train: pd.DataFrame, y_train: pd.Series, parameters: dict) -> RandomForestRegressor:
+def train_model(X_train: pd.DataFrame, y_train: pd.Series, training_df: pd.DataFrame, training_job: RetrievalJob, parameters: dict) -> RandomForestRegressor:
     """Trains the linear regression model.
 
     Args:
@@ -118,6 +119,38 @@ def train_model(X_train: pd.DataFrame, y_train: pd.Series, parameters: dict) -> 
         signature=signature,
         input_example=X_train,
         registered_model_name="spaceflights-kedro",
+    )
+
+    client = mlflow.tracking.MlflowClient()
+    versions = client.search_model_versions(
+        filter_string="name='spaceflights-kedro'",
+        max_results=1000,  # o un numero ragionevole
+    )
+
+    if not versions:
+        raise ValueError("Nessuna model version trovata per 'spaceflights-kedro' in MLflow Registry.")
+
+    # mv.version è stringa -> cast a int per confronto robusto
+    mv = max(versions, key=lambda v: int(v.version))
+    model_name = mv.name
+    model_version = mv.version
+    store = FeatureStore(repo_path=os.getcwd())
+    run_id = mlflow.active_run().info.run_id
+
+    saved_dataset = store.create_saved_dataset(
+        from_=training_job,  # ✅ QUI
+        name=f"training_dataset_{model_version}",
+        storage=SavedDatasetPostgreSQLStorage(
+            table_ref="training_dataset_table"
+        ),
+        tags={
+            "model_name": model_name,
+            "model_version": str(model_version),
+            "created_at": datetime.now(tz=timezone.utc).isoformat(),
+            "start_date": parameters.get("start_date", ""),
+            "end_date": parameters.get("end_date", ""),
+            "mlflow_run_id": run_id,
+        },
     )
 
     return regressor
