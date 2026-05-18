@@ -14,31 +14,28 @@ from utils.evidently_integration import (
 )
 import subprocess
 from pathlib import Path
+from urllib.parse import urljoin
+import time
 
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="ML Feature Generator", layout="wide")
 
-# Margini e spacing
+# ---------------- GLOBAL CSS ----------------
 st.markdown(
     """
 <style>
+/* margini & spacing */
 div.block-container { padding-left: 1.2rem; padding-right: 1.2rem; padding-top: 1.0rem; }
 div[data-testid="stVerticalBlock"] > div { gap: 0.65rem; }
-</style>
-""",
-    unsafe_allow_html=True,
-)
 
-# CSS Tastierina (keypad)
-st.markdown(
-    """
-<style>
+/* nasconde la decoration/progress bar in alto (la riga giallina) */
+div[data-testid="stDecoration"] { display: none !important; }
 
 /* Contenitore keypad */
 .st-key-action_keypad { padding-top: 0.25rem; }
 
-/* Dimensione bottoni */
+/* Dimensione bottoni keypad */
 .st-key-pad_analyze button,
 .st-key-pad_generate button,
 .st-key-pad_retrain button,
@@ -54,7 +51,7 @@ st.markdown(
   white-space: nowrap !important;
 }
 
-/* Colori */
+/* Colori keypad */
 .st-key-pad_generate button { background-color: #1976D2 !important; color: white !important; } /* blu */
 .st-key-pad_analyze  button { background-color: #7B1FA2 !important; color: white !important; } /* viola */
 .st-key-pad_retrain  button { background-color: #2E7D32 !important; color: white !important; } /* verde */
@@ -90,6 +87,20 @@ st.markdown(
   color: #9e9e9e !important;
   border: 1px solid #cccccc !important;
 }
+
+/* Badge esito Feast apply */
+.feast-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 650;
+  margin-left: 0.5rem;
+}
+.feast-ok { background: rgba(46,125,50,0.15); color: #2E7D32; border: 1px solid rgba(46,125,50,0.35); }
+.feast-ko { background: rgba(211,47,47,0.12); color: #D32F2F; border: 1px solid rgba(211,47,47,0.30); }
 </style>
 """,
     unsafe_allow_html=True,
@@ -112,11 +123,14 @@ NUM_TO_LABEL = {num: lab for lab, num in MONTHS_IT}
 # ---------------- STATE ----------------
 def _init_state():
     if "selected_months" not in st.session_state:
-        st.session_state.selected_months = [1]  # default GENNAIO
+        st.session_state.selected_months = [1]  # default: Gennaio
+
     if "months_with_samples" not in st.session_state:
         st.session_state.months_with_samples = set()
     if "month_samples_meta" not in st.session_state:
         st.session_state.month_samples_meta = {}
+
+    # generate
     if "generated" not in st.session_state:
         st.session_state.generated = False
     if "generated_data" not in st.session_state:
@@ -125,35 +139,58 @@ def _init_state():
         st.session_state.generated_start_date = None
     if "generated_end_date" not in st.session_state:
         st.session_state.generated_end_date = None
-    if "feast_start_date" not in st.session_state:
-        st.session_state.feast_start_date = "2025-01-01T00:00:00+00:00"
+    if "postgres_success" not in st.session_state:
+        st.session_state.postgres_success = False
+    if "postgres_error" not in st.session_state:
+        st.session_state.postgres_error = None
 
-    # Analyze wizard
+    # analyze wizard
     if "analyze_pending" not in st.session_state:
         st.session_state.analyze_pending = False
     if "analyze_reference_month" not in st.session_state:
         st.session_state.analyze_reference_month = None
-    if "analyze_current_month" not in st.session_state:
-        st.session_state.analyze_current_month = None
-    if "analyze_results" not in st.session_state:
-        st.session_state.analyze_results = None
     if "analyze_last_pair" not in st.session_state:
         st.session_state.analyze_last_pair = None
+    if "analyze_results" not in st.session_state:
+        st.session_state.analyze_results = None
 
-    # Feast apply output
+    # feast apply status (solo esito)
     if "feast_apply_running" not in st.session_state:
         st.session_state.feast_apply_running = False
-    if "feast_apply_last" not in st.session_state:
-        st.session_state.feast_apply_last = None
+    if "feast_apply_status" not in st.session_state:
+        st.session_state.feast_apply_status = None  # "ok" | "ko" | None
+    if "feast_apply_last_ts" not in st.session_state:
+        st.session_state.feast_apply_last_ts = None
+
+    # action dispatch (evita st.rerun)
+    if "pending_action" not in st.session_state:
+        st.session_state.pending_action = None
+    if "api_call_to_show" not in st.session_state:
+        st.session_state.api_call_to_show = None
+
+    # retrain status
+    if "retrain_last" not in st.session_state:
+        st.session_state.retrain_last = None
+    if "retrain_error" not in st.session_state:
+        st.session_state.retrain_error = None
 
 
 def select_single_month(month_num: int):
-    """Selezione singola: max 1 mese alla volta."""
+    """Selezione singola. Blocca selezione current uguale al reference durante Analyze."""
+
+    pending = st.session_state.get("analyze_pending", False)
+    ref_month = st.session_state.get("analyze_reference_month")
+
+    if pending and ref_month == month_num:
+        return
+
     current = st.session_state.get("selected_months", [])
     if len(current) == 1 and current[0] == month_num:
-        st.session_state.selected_months = []  # toggle off
+        st.session_state.selected_months = []
     else:
         st.session_state.selected_months = [month_num]
+
+    st.session_state.api_call_to_show = None
 
 
 def month_bounds_utc(year: int, month: int):
@@ -165,8 +202,6 @@ def month_bounds_utc(year: int, month: int):
 
 def inject_month_css(months_with_samples: set, selected_months: list):
     css = ["<style>"]
-
-    # Linea di collegamento dietro i mesi
     css.append("""
     .st-key-timeline_row [data-testid="stHorizontalBlock"] {
         background-image: linear-gradient(
@@ -183,7 +218,6 @@ def inject_month_css(months_with_samples: set, selected_months: list):
         padding: 1rem 0;
     }
     """)
-
     for _, m in MONTHS_IT:
         key = f"m{m:02d}"
         sel = f".st-key-{key} button"
@@ -215,71 +249,19 @@ def inject_month_css(months_with_samples: set, selected_months: list):
         }}""")
 
         if m in selected_months:
-            if m in months_with_samples:
-                css.append(f"""{sel} {{
-                    background-color: #B3E5FC !important;
-                    color: #01579B !important;
-                    border: 3px solid #1976D2 !important;
-                    box-shadow:
-                        0 0 0 4px rgba(25,118,210,0.30),
-                        0 4px 12px rgba(25,118,210,0.35) !important;
-                    transform: scale(1.12);
-                    font-weight: 700 !important;
-                }}""")
-            else:
-                css.append(f"""{sel} {{
-                    background-color: white !important;
-                    color: #1976D2 !important;
-                    border: 3px solid #1976D2 !important;
-                    box-shadow:
-                        0 0 0 4px rgba(25,118,210,0.25),
-                        0 4px 12px rgba(25,118,210,0.35) !important;
-                    transform: scale(1.12);
-                    font-weight: 700 !important;
-                }}""")
+            css.append(f"""{sel} {{
+                background-color: {'#B3E5FC' if m in months_with_samples else 'white'} !important;
+                color: #1976D2 !important;
+                border: 3px solid #1976D2 !important;
+                box-shadow:
+                    0 0 0 4px rgba(25,118,210,0.25),
+                    0 4px 12px rgba(25,118,210,0.35) !important;
+                transform: scale(1.12);
+                font-weight: 700 !important;
+            }}""")
 
     css.append("</style>")
     st.markdown("\n".join(css), unsafe_allow_html=True)
-
-
-def run_feast_apply():
-    st.session_state.feast_apply_running = True
-    st.session_state.feast_apply_last = None
-
-    repo_dir = Path(__file__).resolve().parent
-
-    try:
-        proc = subprocess.run(
-            ["feast", "-c", str(repo_dir), "apply"],
-            capture_output=True,
-            text=True,
-        )
-        st.session_state.feast_apply_last = {
-            "returncode": proc.returncode,
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-            "repo_dir": str(repo_dir),
-            "command": f"feast -c {repo_dir} apply",
-        }
-    except FileNotFoundError:
-        st.session_state.feast_apply_last = {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": "Comando `feast` non trovato nel container. Assicurati che feast sia installato nell'immagine.",
-            "repo_dir": str(repo_dir),
-            "command": "feast ...",
-        }
-    except Exception as e:
-        st.session_state.feast_apply_last = {
-            "returncode": -1,
-            "stdout": "",
-            "stderr": f"Errore durante feast apply: {e}",
-            "repo_dir": str(repo_dir),
-            "command": f"feast -c {repo_dir} apply",
-        }
-    finally:
-        st.session_state.feast_apply_running = False
-        st.rerun()
 
 
 def upload_to_minio(df, object_name):
@@ -320,26 +302,260 @@ def _simplify_failed_tests(failed_tests):
     return out
 
 
-# ---------------- UI ----------------
-_init_state()
+# ---------------- CALLBACKS (NO st.rerun) ----------------
+def cb_feast_apply():
+    st.session_state.pending_action = "feast_apply"
 
+def cb_generate():
+    st.session_state.pending_action = "generate"
+
+def cb_retrain():
+    st.session_state.pending_action = "retrain"
+
+def cb_api():
+    sm = st.session_state.get("selected_months", [])
+    if len(sm) == 1:
+        st.session_state.api_call_to_show = int(sm[0])
+
+def cb_analyze_start():
+    sm = st.session_state.get("selected_months", [])
+    if len(sm) == 1:
+        st.session_state.analyze_pending = True
+        st.session_state.analyze_reference_month = int(sm[0])
+        st.session_state.analyze_last_pair = None
+        st.session_state.selected_months = []  # step2: scegli current
+
+def cb_analyze_cancel():
+    st.session_state.analyze_pending = False
+    st.session_state.analyze_reference_month = None
+    st.session_state.analyze_last_pair = None
+
+
+# ---------------- ACTION RUNNER (prima del render UI) ----------------
+_init_state()
+action = st.session_state.get("pending_action")
+
+# ---- FEAST APPLY ----
+if action == "feast_apply":
+    st.session_state.pending_action = None
+    st.session_state.feast_apply_running = True
+
+    repo_dir = Path(__file__).resolve().parent
+    with st.spinner("Eseguo `feast apply`..."):
+        try:
+            proc = subprocess.run(
+                ["feast", "-c", str(repo_dir), "apply"],
+                capture_output=True,
+                text=True,
+            )
+            st.session_state.feast_apply_status = "ok" if proc.returncode == 0 else "ko"
+            st.session_state.feast_apply_last_ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            st.session_state.feast_apply_status = "ko"
+            st.session_state.feast_apply_last_ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    st.session_state.feast_apply_running = False
+
+
+# ---- GENERATE ----
+elif action == "generate":
+    st.session_state.pending_action = None
+    sm = st.session_state.get("selected_months", [])
+    if len(sm) != 1:
+        st.session_state.postgres_error = "Generate richiede ESATTAMENTE 1 mese selezionato."
+        st.session_state.generated = False
+    else:
+        month = int(sm[0])
+        year = datetime.now(timezone.utc).year
+        month_start, month_end = month_bounds_utc(year, month)
+
+        with st.spinner("Genero samples..."):
+            try:
+                if not os.path.exists("data/reference.csv"):
+                    raise FileNotFoundError("File 'reference.csv' not found.")
+
+                num_samples = int(st.session_state.get("num_samples", 10000))
+
+                reference_df = pd.read_csv("data/reference.csv")
+                current_df = reference_df.sample(n=num_samples, replace=True).reset_index(drop=True)
+
+                # slider values
+                engines_range = st.session_state.get("engines_range", (1.0, 4.0))
+                passenger_capacity_range = st.session_state.get("passenger_capacity_range", (2, 10))
+                crew_range = st.session_state.get("crew_range", (1.0, 5.0))
+                company_rating_range = st.session_state.get("company_rating_range", (3.0, 5.0))
+                review_scores_rating_range = st.session_state.get("review_scores_rating_range", (3.5, 35.0))
+                price_range = st.session_state.get("price_range", (500.0, 3000.0))
+
+                d_check_prob = st.session_state.get("d_check_prob", 70)
+                moon_clearance_prob = st.session_state.get("moon_clearance_prob", 60)
+                iata_approved_prob = st.session_state.get("iata_approved_prob", 50)
+
+                generation_timestamp = datetime.now(tz=timezone.utc)
+
+                current_df["engines"] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1, len(current_df)).astype(float)
+                current_df["passenger_capacity"] = np.random.randint(passenger_capacity_range[0], passenger_capacity_range[1] + 1, len(current_df))
+                current_df["crew"] = np.random.uniform(crew_range[0], crew_range[1], len(current_df)).round(1)
+
+                current_df["d_check_complete"] = np.random.random(len(current_df)) < (d_check_prob / 100)
+                current_df["moon_clearance_complete"] = np.random.random(len(current_df)) < (moon_clearance_prob / 100)
+                current_df["iata_approved"] = np.random.random(len(current_df)) < (iata_approved_prob / 100)
+
+                current_df["company_rating"] = np.random.uniform(company_rating_range[0], company_rating_range[1], len(current_df)).round(1)
+                current_df["review_scores_rating"] = np.random.uniform(review_scores_rating_range[0], review_scores_rating_range[1], len(current_df)).round(1)
+                current_df["price"] = np.random.uniform(price_range[0], price_range[1], len(current_df)).round(1)
+
+                start_u = int(month_start.timestamp())
+                end_u = int(month_end.timestamp())
+                rand_u = np.random.randint(start_u, end_u + 1, size=len(current_df), dtype=np.int64)
+                current_df["event_timestamp"] = pd.to_datetime(rand_u, unit="s", utc=True)
+
+                st.session_state.generated_start_date = month_start.isoformat()
+                st.session_state.generated_end_date = month_end.isoformat()
+
+                st.session_state.generated_data = current_df
+                st.session_state.generated = True
+                st.session_state.postgres_success = False
+                st.session_state.postgres_error = None
+
+                # mark month as generated
+                st.session_state.months_with_samples.update([month])
+                st.session_state.month_samples_meta[month] = {
+                    "last_ts": generation_timestamp.isoformat(),
+                    "count": int(num_samples),
+                }
+
+                # write to Postgres
+                engine = postgres_engine()
+                current_df.to_sql("spaceflight_table", engine, if_exists="append", index=False)
+                st.session_state.postgres_success = True
+
+                # upload to MinIO
+                upload_to_minio(current_df, MINIO_CURRENT_OBJ + generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
+
+            except Exception as e:
+                st.session_state.generated = False
+                st.session_state.postgres_success = False
+                st.session_state.postgres_error = str(e)
+
+
+# ---- RETRAIN (submit + polling completo) ----
+elif action == "retrain":
+    st.session_state.pending_action = None
+    st.session_state.retrain_last = None
+    st.session_state.retrain_error = None
+
+    sm = st.session_state.get("selected_months", [])
+    months_with_samples = st.session_state.get("months_with_samples", set())
+
+    if not (len(sm) == 1 and set(sm).issubset(months_with_samples)):
+        st.session_state.retrain_error = "Train/retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro)."
+    else:
+        retrain_url = os.getenv("RETRAIN_URL", "http://training-pipeline:8005/run-pipeline").strip()
+        if not retrain_url:
+            st.session_state.retrain_error = "RETRAIN_URL non configurata."
+        else:
+            month = int(sm[0])
+            year = datetime.now(timezone.utc).year
+            month_start, month_end = month_bounds_utc(year, month)
+
+            payload = {
+                "start_date": month_start.isoformat(),
+                "end_date": month_end.isoformat(),
+                "pipeline": "training",
+                "year": year,
+                "months": [month],
+                "num_samples": int(st.session_state.get("num_samples", 10000)),
+            }
+
+            poll_interval_sec = 2
+            max_polls = 1800
+
+            with st.spinner("Training/retraining in corso..."):
+                try:
+                    submit = requests.post(retrain_url, json=payload, timeout=30)
+                    if submit.status_code not in (200, 202):
+                        st.session_state.retrain_error = f"Submit fallito: {submit.status_code} - {submit.text}"
+                    else:
+                        submit_json = submit.json()
+                        job_id = submit_json.get("job_id")
+                        status_path = submit_json.get("status_url")
+
+                        if not job_id:
+                            st.session_state.retrain_error = f"Submit OK ma manca job_id: {submit_json}"
+                        else:
+                            status_url = urljoin(retrain_url, status_path) if status_path else urljoin(retrain_url, f"/run-pipeline/{job_id}")
+
+                            last_status = None
+                            for _ in range(max_polls):
+                                r = requests.get(status_url, timeout=30)
+                                if not r.ok:
+                                    st.session_state.retrain_error = f"Errore polling status: {r.status_code} - {r.text}"
+                                    break
+
+                                last_status = r.json()
+                                state = last_status.get("status")
+
+                                if state in ("completed", "failed"):
+                                    break
+
+                                time.sleep(poll_interval_sec)
+
+                            st.session_state.retrain_last = {
+                                "job_id": job_id,
+                                "status_url": status_url,
+                                "last_status": last_status,
+                            }
+
+                except Exception as e:
+                    st.session_state.retrain_error = f"Errore chiamata training/retrain: {e}"
+
+
+# ---------------- UI ----------------
 st.title("ML Feature Generator")
 
+# --- FEAST APPLY ROW (sinistra + badge vicino) ---
+
 st.markdown("**Create or update a feature store deployment:**")
-st.button(
-    "🧩 Feast apply",
-    key="btn_feast_apply",
-    disabled=st.session_state.get("feast_apply_running", False),
-    on_click=run_feast_apply,
-)
+
+c_left, c_right = st.columns([1.4, 6.6], vertical_alignment="center")
+
+with c_left:
+    st.button(
+        "🧩 Feast apply",
+        key="btn_feast_apply",
+        disabled=st.session_state.get("feast_apply_running", False),
+        on_click=cb_feast_apply,
+    )
+
+with c_right:
+    status = st.session_state.get("feast_apply_status")
+
+    if status == "ok":
+        st.markdown(
+            "<span class='feast-badge feast-ok'>✅ Feature successfully loaded on the Feature Store</span>",
+            unsafe_allow_html=True
+        )
+    elif status == "ko":
+        st.markdown(
+            "<span class='feast-badge feast-ko'>❌ Feature loading failed</span>",
+            unsafe_allow_html=True
+        )
+
 
 st.markdown("---")
 st.write("Configura features range and generate new samples")
 
-# Inputs
-top_left, _ = st.columns([2, 1])
-with top_left:
-    num_samples = st.number_input("Number of samples", min_value=1, value=10000, step=1)
+col_samples, _ = st.columns([1, 4])
+
+with col_samples:
+    st.number_input(
+        "Number of samples",
+        min_value=1,
+        value=10000,
+        step=1,
+        key="num_samples"
+    )
 
 left_panel, right_panel = st.columns([3.2, 1.3], gap="large")
 
@@ -347,26 +563,25 @@ with left_panel:
     st.subheader("Range delle Features Numeriche")
     ncol1, ncol2 = st.columns(2, gap="medium")
     with ncol1:
-        engines_range = st.slider("Engines - Range", 0.0, 10.0, (1.0, 4.0), 1.0)
-        passenger_capacity_range = st.slider("Passenger Capacity - Range", 1, 50, (2, 10), 1)
-        crew_range = st.slider("Crew - Range", 0.0, 20.0, (1.0, 5.0), 1.0)
+        st.slider("Engines - Range", 0.0, 10.0, (1.0, 4.0), 1.0, key="engines_range")
+        st.slider("Passenger Capacity - Range", 1, 50, (2, 10), 1, key="passenger_capacity_range")
+        st.slider("Crew - Range", 0.0, 20.0, (1.0, 5.0), 1.0, key="crew_range")
     with ncol2:
-        company_rating_range = st.slider("Company Rating - Range", 0.0, 5.0, (3.0, 5.0), 0.1)
-        review_scores_rating_range = st.slider("Review Scores Rating - Range", 0.0, 100.0, (3.5, 35.0), 0.1)
-        price_range = st.slider("Price - Range", 0.0, 10000.0, (500.0, 3000.0), 50.0)
+        st.slider("Company Rating - Range", 0.0, 5.0, (3.0, 5.0), 0.1, key="company_rating_range")
+        st.slider("Review Scores Rating - Range", 0.0, 100.0, (3.5, 35.0), 0.1, key="review_scores_rating_range")
+        st.slider("Price - Range", 0.0, 10000.0, (500.0, 3000.0), 50.0, key="price_range")
 
 with right_panel:
     st.subheader("Boolean features probability")
-    d_check_prob = st.slider("D Check Complete (%)", 0, 100, 70, 1)
-    moon_clearance_prob = st.slider("Moon Clearance Complete (%)", 0, 100, 60, 1)
-    iata_approved_prob = st.slider("IATA Approved (%)", 0, 100, 50, 1)
+    st.slider("D Check Complete (%)", 0, 100, 70, 1, key="d_check_prob")
+    st.slider("Moon Clearance Complete (%)", 0, 100, 60, 1, key="moon_clearance_prob")
+    st.slider("IATA Approved (%)", 0, 100, 50, 1, key="iata_approved_prob")
 
 st.markdown("---")
 
 months_with_samples = st.session_state.get("months_with_samples", set())
 selected_months = st.session_state.get("selected_months", [])
 
-# Layout: timeline + keypad
 left, right = st.columns([7.2, 2.8], gap="small", vertical_alignment="top")
 
 with left:
@@ -390,7 +605,6 @@ with right:
     pending = st.session_state.get("analyze_pending", False)
     ref_month = st.session_state.get("analyze_reference_month")
 
-    # ✅ Ora: max 1 mese per Generate / Retrain / API
     generate_enabled = (len(selected_months) == 1)
     analyze_enabled = ((not pending) and (len(selected_months) == 1) and set(selected_months).issubset(months_with_samples))
     retrain_enabled = ((len(selected_months) == 1) and set(selected_months).issubset(months_with_samples))
@@ -400,40 +614,22 @@ with right:
     with keypad:
         r1c1, r1c2 = st.columns(2, gap="xsmall")
         with r1c1:
-            generate_button = st.button("✨ Generate", key="pad_generate", type="primary", disabled=not generate_enabled)
+            st.button("✨ Generate", key="pad_generate", type="primary", disabled=not generate_enabled, on_click=cb_generate)
         with r1c2:
-            analyze_button = st.button("🔎 Analyze", key="pad_analyze", disabled=not analyze_enabled)
+            st.button("🔎 Analyze", key="pad_analyze", disabled=not analyze_enabled, on_click=cb_analyze_start)
 
         r2c1, r2c2 = st.columns(2, gap="xsmall")
         with r2c1:
-            retrain_button = st.button("🔁 Train", key="pad_retrain", disabled=not retrain_enabled)
+            st.button("🔁 Train", key="pad_retrain", disabled=not retrain_enabled, on_click=cb_retrain)
         with r2c2:
-            cancel_analyze = st.button("✖️ Cancel", key="pad_cancel", disabled=not pending)
+            st.button("✖️ Cancel", key="pad_cancel", disabled=not pending, on_click=cb_analyze_cancel)
 
         r3c1, r3c2 = st.columns(2, gap="xsmall")
         with r3c1:
-            api_call_button = st.button("📄 API", key="pad_api", disabled=not api_call_enabled)
+            st.button("📄 API", key="pad_api", disabled=not api_call_enabled, on_click=cb_api)
         with r3c2:
             st.write("")
 
-    # Analyze Step 1
-    if analyze_button:
-        ref = int(selected_months[0])
-        st.session_state.analyze_pending = True
-        st.session_state.analyze_reference_month = ref
-        st.session_state.analyze_current_month = None
-        st.session_state.analyze_last_pair = None
-        st.session_state.selected_months = []  # step 2: user selects current
-        st.rerun()
-
-    # Cancel analyze
-    if cancel_analyze and pending:
-        st.session_state.analyze_pending = False
-        st.session_state.analyze_reference_month = None
-        st.session_state.analyze_current_month = None
-        st.rerun()
-
-    # Hint
     msg = ""
     if pending and ref_month is not None:
         msg = f"Analyze (Step 2): reference = {NUM_TO_LABEL.get(ref_month, ref_month)} → seleziona un mese current già generato (azzurro)."
@@ -449,20 +645,15 @@ with right:
     st.caption(msg if msg else " ")
 
 
-# ---------------- API CALL (1 mese) ----------------
-if api_call_button and len(selected_months) == 1:
+# ---------------- API CALL OUTPUT ----------------
+api_month = st.session_state.get("api_call_to_show")
+if api_month is not None:
     year = datetime.now(timezone.utc).year
-    month = int(selected_months[0])
-    m_start, m_end = month_bounds_utc(year, month)
-
+    m_start, m_end = month_bounds_utc(year, int(api_month))
     curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
   -H "Content-Type: application/json" \\
-  -d '{{
-        "start_date": "{m_start.isoformat()}",
-        "end_date": "{m_end.isoformat()}"
-      }}' '''
-
-    st.subheader(f"API call (mese {NUM_TO_LABEL.get(month, month)})")
+  -d '{{"start_date": "{m_start.isoformat()}", "end_date": "{m_end.isoformat()}"}}' '''
+    st.subheader(f"API call (mese {NUM_TO_LABEL.get(int(api_month), api_month)})")
     st.code(curl_command, language="bash")
 
 
@@ -514,231 +705,36 @@ if pending and ref_month is not None and len(selected_months) == 1:
 
             st.session_state.analyze_pending = False
             st.session_state.analyze_reference_month = None
-            st.session_state.analyze_current_month = None
             st.session_state.selected_months = []
-            st.rerun()
 
 
-# ---------------- GENERATE (1 mese) ----------------
-if generate_button:
-    try:
-        selected_months = st.session_state.get("selected_months", [])
-        if len(selected_months) != 1:
-            st.error("Generate richiede ESATTAMENTE 1 mese selezionato.")
-            st.stop()
-
-        if not os.path.exists("data/reference.csv"):
-            st.error("File 'reference.csv' not found.")
-            st.stop()
-
-        reference_df = pd.read_csv("data/reference.csv")
-        current_df = reference_df.sample(n=num_samples, replace=True).reset_index(drop=True)
-
-        generation_timestamp = datetime.now(tz=timezone.utc)
-        st.session_state.generation_timestamp = generation_timestamp
-
-        current_df["engines"] = np.random.randint(int(engines_range[0]), int(engines_range[1]) + 1, len(current_df)).astype(float)
-        current_df["passenger_capacity"] = np.random.randint(passenger_capacity_range[0], passenger_capacity_range[1] + 1, len(current_df))
-        current_df["crew"] = np.random.uniform(crew_range[0], crew_range[1], len(current_df)).round(1)
-
-        current_df["d_check_complete"] = np.random.random(len(current_df)) < (d_check_prob / 100)
-        current_df["moon_clearance_complete"] = np.random.random(len(current_df)) < (moon_clearance_prob / 100)
-        current_df["iata_approved"] = np.random.random(len(current_df)) < (iata_approved_prob / 100)
-
-        current_df["company_rating"] = np.random.uniform(company_rating_range[0], company_rating_range[1], len(current_df)).round(1)
-        current_df["review_scores_rating"] = np.random.uniform(review_scores_rating_range[0], review_scores_rating_range[1], len(current_df)).round(1)
-        current_df["price"] = np.random.uniform(price_range[0], price_range[1], len(current_df)).round(1)
-
-        year = datetime.now(timezone.utc).year
-        month = int(selected_months[0])
-        month_start, month_end = month_bounds_utc(year, month)
-
-        start_u = int(month_start.timestamp())
-        end_u = int(month_end.timestamp())
-        rand_u = np.random.randint(start_u, end_u + 1, size=len(current_df), dtype=np.int64)
-        current_df["event_timestamp"] = pd.to_datetime(rand_u, unit="s", utc=True)
-
-        st.session_state.generated_start_date = month_start.isoformat()
-        st.session_state.generated_end_date = month_end.isoformat()
-
-        st.session_state.generated_data = current_df
-        st.session_state.generated = True
-        st.session_state.postgres_success = False
-        st.session_state.postgres_error = None
-
-        st.session_state.months_with_samples.update([month])
-        st.session_state.month_samples_meta[month] = {
-            "last_ts": generation_timestamp.isoformat(),
-            "count": int(num_samples),
-        }
-
-        try:
-            engine = postgres_engine()
-            current_df.to_sql("spaceflight_table", engine, if_exists="append", index=False)
-            st.session_state.postgres_success = True
-
-            upload_to_minio(current_df, MINIO_CURRENT_OBJ + generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
-            st.rerun()
-
-        except Exception as e:
-            st.session_state.postgres_error = str(e)
-
-    except Exception as e:
-        st.error(f"Errore durante la generazione: {str(e)}")
-
-
-# ---------------- TRAIN/RETRAIN (1 mese già generato) ----------------
-if retrain_button:
-    import time
-    from urllib.parse import urljoin
-
-    selected_months = st.session_state.get("selected_months", [])
-    months_with_samples = st.session_state.get("months_with_samples", set())
-
-    if not (len(selected_months) == 1 and set(selected_months).issubset(months_with_samples)):
-        st.error("Train/retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro).")
-        st.stop()
-
-    retrain_url = os.getenv("RETRAIN_URL", "http://training-pipeline:8005/run-pipeline").strip()
-    if not retrain_url:
-        st.info("RETRAIN_URL non configurata.")
-        st.stop()
-
-    year = datetime.now(timezone.utc).year
-    month = int(selected_months[0])
-    month_start, month_end = month_bounds_utc(year, month)
-
-    payload = {
-        "start_date": month_start.isoformat(),
-        "end_date": month_end.isoformat(),
-        "pipeline": "training",
-        "year": year,
-        "months": [month],
-        "num_samples": int(num_samples),
-    }
-
-    poll_interval_sec = 2
-    max_polls = 1800
-
-    with st.spinner("Training/retraining in corso..."):
-        try:
-            submit = requests.post(retrain_url, json=payload, timeout=30)
-            if submit.status_code not in (200, 202):
-                st.error(f"Submit train/retrain fallito: {submit.status_code}")
-                st.write(submit.text)
-                st.stop()
-
-            submit_json = submit.json()
-            job_id = submit_json.get("job_id")
-            status_path = submit_json.get("status_url")
-
-            if not job_id:
-                st.error("Submit OK ma manca 'job_id' nella response.")
-                st.json(submit_json)
-                st.stop()
-
-            status_url = urljoin(retrain_url, status_path) if status_path else urljoin(retrain_url, f"/run-pipeline/{job_id}")
-            st.session_state.retrain_job_id = job_id
-            st.session_state.retrain_status_url = status_url
-
-            for _ in range(max_polls):
-                r = requests.get(status_url, timeout=30)
-                if not r.ok:
-                    st.error(f"Errore polling status: {r.status_code}")
-                    st.write(r.text)
-                    st.stop()
-
-                status_json = r.json()
-                state = status_json.get("status")
-
-                if state == "completed":
-                    st.success("Training/retrain completato ✅")
-                    st.json(status_json)
-                    break
-                if state == "failed":
-                    st.error("Training/retrain fallito ❌")
-                    st.json(status_json)
-                    break
-
-                time.sleep(poll_interval_sec)
-            else:
-                st.warning("Training/retrain ancora in esecuzione (timeout polling).")
-                st.write({"job_id": job_id, "status_url": status_url})
-
-        except Exception as e:
-            st.error(f"Errore chiamata training/retrain: {e}")
-
-
-# ---------------- UI POST-GENERATE ----------------
+# ---------------- POST-GENERATE UI ----------------
 if st.session_state.get("generated", False):
-    df_last = st.session_state.generated_data
     st.markdown("---")
+    df_last = st.session_state.generated_data
 
     if st.session_state.get("postgres_success", False):
         st.success(f"{len(df_last)} samples loaded on the Offline Store")
     elif st.session_state.get("postgres_error"):
         st.error(f"Error during loading on the Offline Store: {st.session_state.postgres_error}")
 
-    st.subheader("API call")
-    st.write("Run this command to start batch-scoring:")
 
-    start_date = st.session_state.get("generated_start_date")
-    end_date = st.session_state.get("generated_end_date")
-
-    if not start_date:
-        start_date = st.session_state.get("feast_start_date", "2025-01-01T00:00:00+00:00")
-        start_date = pd.to_datetime(start_date, utc=True).isoformat()
-
-    if not end_date:
-        end_date = datetime.now(timezone.utc).isoformat()
-
-    curl_command = f'''curl -X POST http://localhost:3000/batch-scoring \\
-  -H "Content-Type: application/json" \\
-  -d '{{
-        "start_date": "{start_date}",
-        "end_date": "{end_date}"
-      }}' '''
-
-    st.code(curl_command, language="bash")
-
-
-# ---------------- UI POST-ANALYZE ----------------
-if st.session_state.get("analyze_results") is not None:
-    res = st.session_state.analyze_results
+# ---------------- POST-RETRAIN UI ----------------
+if st.session_state.get("retrain_error"):
     st.markdown("---")
-    st.subheader("Analyze / Evidently Results")
+    st.error(st.session_state.retrain_error)
 
-    if res.get("status") == "OK":
-        ref_m = res["reference_month"]
-        cur_m = res["current_month"]
-        st.write({
-            "reference": NUM_TO_LABEL.get(ref_m, ref_m),
-            "current": NUM_TO_LABEL.get(cur_m, cur_m),
-            "failed_data_tests": res.get("failed_data_tests_count", 0),
-            "failed_model_tests": res.get("failed_model_tests_count", 0),
-            "evidently_project_id": res.get("evidently_project_id"),
-        })
-
-        if res.get("failed_data_tests_count", 0) > 0:
-            st.markdown("**Failed Data Drift Tests**")
-            st.dataframe(pd.DataFrame(res.get("failed_data_tests", [])))
-
-        if res.get("failed_model_tests_count", 0) > 0:
-            st.markdown("**Failed Model Performance Tests**")
-            st.dataframe(pd.DataFrame(res.get("failed_model_tests", [])))
-    else:
-        st.error("Evidently analysis fallita")
-        st.write(res)
-
-
-# ---------------- FEAST APPLY OUTPUT (sempre visibile) ----------------
-if st.session_state.get("feast_apply_running", False):
-    with st.spinner("Eseguo `feast apply`..."):
-        st.write("In corso...")
-elif st.session_state.get("feast_apply_last") is not None:
-    res = st.session_state.feast_apply_last
+if st.session_state.get("retrain_last") is not None:
     st.markdown("---")
-    if res.get("returncode", 1) == 0:
-        st.success("feast apply completato ✅")
+
+    last = st.session_state.retrain_last or {}
+    last_status = last.get("last_status") or {}
+    state = last_status.get("status")
+
+    if state == "completed":
+        st.success("✅ Training completed")
+    elif state == "failed":
+        st.error("❌ Training failed")
     else:
-        st.error(f"feast apply fallito ❌ (return code: {res.get('returncode')})")
+        # fallback (non dovrebbe capitare, ma safe)
+        st.success("✅ Training completed")
