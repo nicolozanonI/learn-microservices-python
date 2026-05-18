@@ -585,7 +585,7 @@ selected_months = st.session_state.get("selected_months", [])
 left, right = st.columns([7.2, 2.8], gap="small", vertical_alignment="top")
 
 with left:
-    st.subheader("Timeline (1 anno / 12 mesi)")
+    st.subheader("Timeline")
     inject_month_css(months_with_samples, selected_months)
 
     timeline = st.container(key="timeline_row")
