@@ -15,7 +15,7 @@ services:
       retries: 5
 
   inference:
-    image: spaceflight_service:snzyiksqk2i7saaj # <- your generated image name:tag here
+    image: spaceflight_service:ghegofcsxkw6gaaj # <- your generated image name:tag here
     pull_policy: never
     environment:
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}

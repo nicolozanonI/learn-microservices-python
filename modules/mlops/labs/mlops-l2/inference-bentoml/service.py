@@ -11,6 +11,7 @@ from feast import FeatureStore, FeatureService
 import datetime
 from datetime import datetime
 from typing import Optional
+from sqlalchemy import text, inspect
 
 # -------------------- Constants --------------------
 ARTIFACT_MODEL_NAME = "model"
@@ -136,7 +137,34 @@ class SpaceflightService:
 
             connection_string = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
             engine = create_engine(connection_string)
-            prediction_df.to_sql('spaceflight_prediction_table', engine, if_exists='append', index=False)
+
+            start_ts = pd.to_datetime(batch_scoring_start_date, utc=True)
+            end_ts = pd.to_datetime(batch_scoring_end_date, utc=True)
+
+            table_name = "spaceflight_prediction_table"
+            schema_name = os.getenv("PREDICTION_SCHEMA", "public")  # se non usi schemi, lascia "public"
+
+            insp = inspect(engine)
+
+            if insp.has_table(table_name, schema=schema_name):
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(f"""
+                            DELETE FROM {schema_name}.{table_name}
+                            WHERE event_timestamp >= :start_ts
+                              AND event_timestamp <= :end_ts
+                        """),
+                        {"start_ts": start_ts, "end_ts": end_ts},
+                    )
+
+            prediction_df.to_sql(
+                table_name,
+                engine,
+                schema=schema_name,
+                if_exists="append",
+                index=False,
+                method="multi",
+            )
 
             return {
                 "status": "success",
