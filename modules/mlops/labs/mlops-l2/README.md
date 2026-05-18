@@ -72,63 +72,86 @@ docker compose up --build -d
 
 # Usage
 
-## Feature service
+## Feature Service
 
 ### Using UI
 
-Open the feature service UI at:
-
+Open the Feature Service UI:
 ```
 http://localhost:8501/
 ```
+Click on "Feast apply" to:
+- create the Feature Store registry
+- register all features defined in spaceflight_features.py
 
-Then click on "Feast apply" button to create the registry and to populate it with all the features defined in ```spaceflight_features.py```:
 
 ### Using CLI
 
-Alternatively, you can open a shell in the **feature-service**:
-
-```bash
+Alternatively, run the command inside the container:
+```
 docker compose exec feature-service bash
 ```
-and launch the following commands:
-
-```bash
+Then:
+```
 feast apply
 exit
 ```
 
-You can verify the feature store infrastructure, with all the entities, feature views and feature services at:
+### Verify Feature Store
 
+You can inspect entities, feature views and feature services at:
 ```
 http://localhost:8888/p/spaceflight_project
 ```
 
----
+-----------------------------------------------------
 
-## Dataset generation and model training
+## Dataset Generation & Model Training
 
-Optionally, explore and experiment manually using the notebooks in:
+### Generate Dataset (UI)
 
+1. Open the UI:
 ```
-training-pipeline/notebooks
+   http://localhost:8501/
 ```
+2. Configure:
+   - number of samples
+   - feature ranges (sliders)
 
-Change the values range of the new samples with the sliders and choose a month, then click "Generate" to create a new dataset. Then you can click 
-"Train/retrain" to train a new model on that dataset
+3. Select one month
 
-Verify that a new model appears in the MLflow Model Registry:
+4. Click "Generate"
 
+The service will generate a dataset forthe selected motnh and will store it on the Offline Store.
+### Train / Retrain Model
+
+After generating a dataset:
+
+1. Select the generated month
+2. Click "Train"
+
+This will trigger the training pipeline and the trained model will be saved on the model registry.
+
+
+### Verify Model in MLflow
+
+Check that a new model is registered:
 ```
 http://localhost:5000/#/models
 ```
 
----
+### Optional: Notebooks
 
-## Load a model into the inference engine
+You can also explore manually:
+```
+training-pipeline/notebooks
+```
 
-Ask the inference service to load a specific model version:
+-----------------------------------------------------
 
+## Load Model into Inference Service
+
+Load a specific model version:
 ```bash
 curl -X POST http://localhost:3000/import_model \
   -H "Content-Type: application/json" \
@@ -140,12 +163,9 @@ curl -X POST http://localhost:3000/import_model \
       }'
 ```
 
----
+-----------------------------------------------------
 
-## Run a test prediction
-
-Send a sample prediction request to the inference service:
-
+## Run a Single Prediction
 ```bash
 curl -X POST http://localhost:3000/predict \
   -H "Content-Type: application/json" \
@@ -163,33 +183,51 @@ curl -X POST http://localhost:3000/predict \
       }'
 ```
 
----
+-----------------------------------------------------
 
+## Batch Scoring
 
-### Batch scoring
-
-Classification labels are produced by the **inference-bentoml** service with:
-
+Run predictions over a time window:
 ```bash
 curl -X POST http://localhost:3000/batch-scoring \
-         -H "Content-Type: application/json" \
-         -d '{
-               "start_date": "<batch_scoring_start_date>",
-               "end_date": "<batch_scoring_end_date>"
-             }'  
+  -H "Content-Type: application/json" \
+  -d '{
+        "start_date": "<start_date>",
+        "end_date": "<end_date>"
+      }'
 ```
+Note:
+start_date and end_date are provided by the Feature Service UI: select a month and press "API call", then copy the call on your shell.
 
-*batch_scoring_start_date* and *batch_scoring_end_date* are given in output by the **feature-service** after each 
-samples generation, under the buttons.
 
----
+-----------------------------------------------------
 
-### Analyze data drift and performance changes
+## Analyze Data Drift & Model Performance
 
-From the feature service UI, you can run the analysis comparing reference and current datasets:
-1) Select a new month and generate a new dataset.
-2) Copy the API call and perform batch-scoring on the new dataset
-3) Select the month that you consider reference, click the "Analyze" button and select a second month that will be used as current dataset
-4) Finally, open **Evidently AI** and inspect the results in the UI. Reference dataset is the one used in the
-**training-pipeline**, current dataset is the one generated with the **feature-service**
+You can run the analysis directly from the UI.
+
+Workflow:
+
+1. Generate a dataset (month A)
+2. Run batch scoring on that dataset
+3. Generate another dataset (month B)
+
+4. In the UI:
+   - select month A → click "Analyze"
+   - select month B as current
+
+Important:
+- Reference and current must be different months
+
+
+### View Results in Evidently
+
+Open:
+```
+http://localhost:8888
+```
+You can inspect:
+- data drift
+- model performance
+- failed tests
 
