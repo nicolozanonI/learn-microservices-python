@@ -738,20 +738,7 @@ if st.session_state.get("feast_apply_running", False):
 elif st.session_state.get("feast_apply_last") is not None:
     res = st.session_state.feast_apply_last
     st.markdown("---")
-    st.subheader("Feast apply output")
-
-    st.caption(f"Repo: {res.get('repo_dir')}")
-    st.code(res.get("command", ""), language="bash")
-
     if res.get("returncode", 1) == 0:
         st.success("feast apply completato ✅")
     else:
         st.error(f"feast apply fallito ❌ (return code: {res.get('returncode')})")
-
-    if res.get("stdout"):
-        st.markdown("**stdout**")
-        st.code(res["stdout"], language="text")
-
-    if res.get("stderr"):
-        st.markdown("**stderr**")
-        st.code(res["stderr"], language="text")
