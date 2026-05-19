@@ -204,14 +204,15 @@ start_date and end_date are provided by the Feature Service UI: select a month a
 
 ## Analyze Data Drift & Model Performance
 
-You can run the analysis directly from the UI.
+When you have trained and loaded a model, you can generate a new dataset on another month and run the analysis directly from the UI.
+You have to perform batch-scoring also on the new generated data.
 
-Workflow:
+General workflow:
 
 1. Generate a dataset (month A)
-2. Run batch scoring on that dataset
+2. Train a model for that month, then load it on BentoML
 3. Generate another dataset (month B)
-
+4. Run batch scoring on both dataset (click "API call" on each month and copy it on your shell)
 4. In the UI:
    - select month A → click "Analyze"
    - select month B as current

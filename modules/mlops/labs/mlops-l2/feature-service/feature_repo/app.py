@@ -67,6 +67,13 @@ div[data-testid="stDecoration"] { display: none !important; }
   justify-content: center !important;
 }
 
+.st-key-btn_feast_apply button {
+  background-color: #FF0000 !important;  /* verde petrolio */
+  color: white !important;
+  border: 1px solid rgba(0,0,0,0.15) !important;
+  border-radius: 12px !important;
+}
+
 /* Hover */
 .st-key-pad_analyze button:hover,
 .st-key-pad_generate button:hover,
@@ -75,6 +82,10 @@ div[data-testid="stDecoration"] { display: none !important; }
 .st-key-pad_cancel button:hover {
   transform: translateY(-1px);
   filter: brightness(1.1);
+}
+.st-key-btn_feast_apply button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
 /* Disabled */
@@ -87,6 +98,12 @@ div[data-testid="stDecoration"] { display: none !important; }
   color: #9e9e9e !important;
   border: 1px solid #cccccc !important;
 }
+.st-key-btn_feast_apply button:disabled {
+  background-color: #e0e0e0 !important;
+  color: #9e9e9e !important;
+  border: 1px solid #cccccc !important;
+}
+
 
 /* Badge esito Feast apply */
 .feast-badge {
@@ -192,6 +209,8 @@ def select_single_month(month_num: int):
 
     st.session_state.api_call_to_show = None
 
+def clear_selected_month():
+    st.session_state.selected_months = []
 
 def month_bounds_utc(year: int, month: int):
     last_day = calendar.monthrange(year, month)[1]
@@ -316,6 +335,7 @@ def cb_api():
     sm = st.session_state.get("selected_months", [])
     if len(sm) == 1:
         st.session_state.api_call_to_show = int(sm[0])
+        st.session_state.selected_months = []
 
 def cb_analyze_start():
     sm = st.session_state.get("selected_months", [])
@@ -364,6 +384,7 @@ elif action == "generate":
     if len(sm) != 1:
         st.session_state.postgres_error = "Generate richiede ESATTAMENTE 1 mese selezionato."
         st.session_state.generated = False
+        st.session_state.selected_months = []
     else:
         month = int(sm[0])
         year = datetime.now(timezone.utc).year
@@ -432,11 +453,13 @@ elif action == "generate":
 
                 # upload to MinIO
                 upload_to_minio(current_df, MINIO_CURRENT_OBJ + generation_timestamp.strftime("%Y-%m-%d_%H-%M-%S"))
+                st.session_state.selected_months = []
 
             except Exception as e:
                 st.session_state.generated = False
                 st.session_state.postgres_success = False
                 st.session_state.postgres_error = str(e)
+                st.session_state.selected_months = []
 
 
 # ---- RETRAIN (submit + polling completo) ----
@@ -447,6 +470,7 @@ elif action == "retrain":
 
     sm = st.session_state.get("selected_months", [])
     months_with_samples = st.session_state.get("months_with_samples", set())
+    st.session_state.selected_months = []
 
     if not (len(sm) == 1 and set(sm).issubset(months_with_samples)):
         st.session_state.retrain_error = "Train/retrain richiede ESATTAMENTE 1 mese selezionato e già generato (azzurro)."
@@ -506,9 +530,11 @@ elif action == "retrain":
                                 "status_url": status_url,
                                 "last_status": last_status,
                             }
+                    st.session_state.selected_months = []
 
                 except Exception as e:
                     st.session_state.retrain_error = f"Errore chiamata training/retrain: {e}"
+                    st.session_state.selected_months = []
 
 
 # ---------------- UI ----------------
@@ -522,7 +548,7 @@ c_left, c_right = st.columns([1.4, 6.6], vertical_alignment="center")
 
 with c_left:
     st.button(
-        "🧩 Feast apply",
+        "⬆️ Feast apply",
         key="btn_feast_apply",
         disabled=st.session_state.get("feast_apply_running", False),
         on_click=cb_feast_apply,
@@ -654,7 +680,11 @@ if api_month is not None:
   -H "Content-Type: application/json" \\
   -d '{{"start_date": "{m_start.isoformat()}", "end_date": "{m_end.isoformat()}"}}' '''
     st.subheader(f"API call (mese {NUM_TO_LABEL.get(int(api_month), api_month)})")
-    st.code(curl_command, language="bash")
+
+    api_col, _ = st.columns([2,1])
+    with api_col:
+        st.code(curl_command, language="bash",
+                wrap_lines=True)
 
 
 # ---------------- ANALYZE STEP 2 (Evidently) ----------------

@@ -75,11 +75,6 @@ def split_data(start_date: str, end_date: str, parameters: dict) -> tuple:
 
     training_df = training_job.to_df()
 
-    csv_path = "./data/05_model_input/training_input_table.csv"
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    training_df.to_csv(csv_path, index=False)
-    mlflow.log_artifact(csv_path, artifact_path="datasets")
-
     X = training_df[parameters["features"]]
     y = training_df["price"]
 
